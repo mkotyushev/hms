@@ -1,0 +1,18 @@
+// More info: https://containers.dev/implementors/json_reference/
+{
+	"dockerComposeFile": "../docker-compose.yml",
+	
+	"service": "dev",
+	"workspaceFolder": "/workspace/<<[repository_name]>>",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"eamodio.gitlens",
+				"GitHub.copilot",
+				"ms-python.python",
+				"ms-toolsai.jupyter"
+			]
+		}
+	},
+	"shutdownAction": "none"
+}

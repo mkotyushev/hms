@@ -1,0 +1,33 @@
+version: '1'
+services:
+  dev:
+    # Note that the path of the Dockerfile and context is relative to the *primary*
+    # docker-compose.yml file (the first in the devcontainer.json "dockerComposeFile"
+    # array). The sample below assumes your primary file is in the root of your project.
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    shm_size: '16gb'
+    env_file:
+      - .env
+    environment:
+      - SSH_AUTH_SOCK:${SSH_AUTH_SOCK}
+    volumes:
+      - .:/workspace/<<[repository_name]>>:cached
+      - pip_cache:/root/.cache/pip:cached
+      - data:/workspace/data:cached
+      - ${DATA_PATH_OR_VOLUME_NAME}:/workspace/data_external:cached
+      - $SSH_AUTH_SOCK:${SSH_AUTH_SOCK}
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 55g
+volumes:
+  data:
+  pip_cache:
