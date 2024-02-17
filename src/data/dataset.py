@@ -2,15 +2,13 @@ import pandas as pd
 from pathlib import Path
 from typing import Callable, Dict
 
+from .constants import (
+    LABEL_COLS_ORDERED, 
+    SPECTROGRAM_COLS_ORDERED, 
+    EEG_COLS_ORDERED,
+)
 
-LABEL_COLNAMES = [
-    'seizure_vote',
-    'lpd_vote',
-    'gpd_vote',
-    'lrda_vote',
-    'grda_vote',
-    'other_vote',
-]
+
 class HmsDataset:
     def __init__(
         self, 
@@ -25,17 +23,10 @@ class HmsDataset:
         self.spectrogram_dirpath = spectrogram_dirpath
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
-        if cache is None:
-            cache = dict()
         self.cache = cache
 
     def __len__(self) -> int:
         return len(self.index_to_eeg_id)
-    
-    def read_parquet(self, path: Path):
-        if path not in self.cache:
-            self.cache[path] = pd.read_parquet(path)
-        return self.cache[path]
     
     def __getitem__(self, idx: int):
         # Get group of same eed_id
@@ -44,10 +35,12 @@ class HmsDataset:
         spectrogram_id = df['spectrogram_id'].iloc[0]  # all spectrogram_id are same 
 
         # Get item
+        df_eeg = self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet')
+        df_spectrogram = self.read_parquet(self.spectrogram_dirpath / f'{spectrogram_id}.parquet')
         item = {
-            'eeg': self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet'),
-            'spectogram': self.read_parquet(self.spectrogram_dirpath / f'{spectrogram_id}.parquet'),
-            'label': df[LABEL_COLNAMES],
+            'eeg': df_eeg[EEG_COLS_ORDERED].values,
+            'spectogram': df_spectrogram[SPECTROGRAM_COLS_ORDERED].values,
+            'label': df[LABEL_COLS_ORDERED].values,
             'meta': df,
         }
 
@@ -55,4 +48,15 @@ class HmsDataset:
         if self.transform is not None:
             item = self.transform(**item)
 
+        return item
+
+    def read_parquet(self, path: Path):
+        if self.cache is None:
+            item = pd.read_parquet(path)
+        else:
+            if path in self.cache:
+                item = self.cache[path]
+            else:
+                item = pd.read_parquet(path)
+                self.cache[path] = item
         return item
