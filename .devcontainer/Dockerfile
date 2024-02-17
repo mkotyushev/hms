@@ -4,7 +4,7 @@ ARG CUDA_VERSION=12.1.0
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
 
 # Set working directory
-WORKDIR /workspace/<<[repository_name]>>
+WORKDIR /workspace/hms
 
 # Apt-get installs
 RUN \
@@ -24,14 +24,14 @@ ENV PATH="/root/miniconda3/bin:${PATH}"
 RUN conda init bash
 RUN \
     conda create \
-    --name <<[repository_name]>> \
+    --name hms \
     python=3.10 \
     gcc_linux-64 gxx_linux-64 libgcc \
     -c conda-forge -y && \
     conda install nvidia/label/cuda-${CUDA_VERSION}::cuda-toolkit
 
 # Update current shell to use env
-SHELL ["conda", "run", "-n", "<<[repository_name]>>", "/bin/bash", "-c"]
+SHELL ["conda", "run", "-n", "hms", "/bin/bash", "-c"]
 
 # Upgrade pip
 RUN python -m pip install --upgrade pip
@@ -51,5 +51,5 @@ RUN pip install \
     -r requirements.txt 
 
 # Add repo folder to PYTHONPATH
-ENV PYTHONPATH="/workspace/<<[repository_name]>>:${PYTHONPATH}"
-ARG PYTHONPATH="/workspace/<<[repository_name]>>:${PYTHONPATH}"
+ENV PYTHONPATH="/workspace/hms:${PYTHONPATH}"
+ARG PYTHONPATH="/workspace/hms:${PYTHONPATH}"

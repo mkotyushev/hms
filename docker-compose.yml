@@ -13,7 +13,7 @@ services:
     environment:
       - SSH_AUTH_SOCK:${SSH_AUTH_SOCK}
     volumes:
-      - .:/workspace/<<[repository_name]>>:cached
+      - .:/workspace/hms:cached
       - pip_cache:/root/.cache/pip:cached
       - data:/workspace/data:cached
       - ${DATA_PATH_OR_VOLUME_NAME}:/workspace/data_external:cached
