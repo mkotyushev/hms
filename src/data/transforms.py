@@ -7,6 +7,8 @@ from .constants import (
     EED_N_SAMPLES, 
     EED_SAMPLING_RATE_HZ, 
     LABEL_COLS_ORDERED,
+    N_SPECTROGRAM_TILES,
+    N_EEG_TIME_WINDOW,
 )
 
 
@@ -177,15 +179,19 @@ class ReshapeToPatches:
         # s: (T=300, F=400) -> (K=4, T=300, F=100)
         spectrogram = item['spectrogram']
         T, F = spectrogram.shape
-        assert F == 400
-        spectrogram = spectrogram.reshape(T, 4, F // 4).transpose((1, 0, 2))
+        assert F % N_SPECTROGRAM_TILES == 0
+        spectrogram = spectrogram.reshape(
+            T, 
+            N_SPECTROGRAM_TILES, 
+            F // N_SPECTROGRAM_TILES
+        ).transpose((1, 0, 2))
 
         # e: (T=10000, F=20) -> (T=50, K=200, F=20)
         eeg = item['eeg']
         T, F = eeg.shape
-        assert T % 200 == 0
-        T_new = T // 200
-        eeg = eeg.reshape(T_new, 200, F)
+        assert T % N_EEG_TIME_WINDOW == 0
+        T_new = T // N_EEG_TIME_WINDOW
+        eeg = eeg.reshape(T_new, N_EEG_TIME_WINDOW, F)
 
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg

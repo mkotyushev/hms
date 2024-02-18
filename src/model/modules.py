@@ -9,6 +9,7 @@ from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
 
 from .hms_classifier import HmsClassifier
+from src.data.constants import N_CLASSES
 from src.utils.utils import state_norm
 from src.utils.mechanic import mechanize
 
@@ -376,19 +377,23 @@ class BaseModule(LightningModule):
 class HmsModule(BaseModule):
     def __init__(
         self,
+        embed_dim=768,
+        num_heads=8,
+        dropout=0.1,
+        depth=8,
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
         self.model = HmsClassifier(
-            n_classes=6,
+            n_classes=N_CLASSES,
             input_dim_s=100,
             num_patches_s=1200,
             input_dim_e=200,
             num_patches_e=1000,
-            embed_dim=128,
-            num_heads=4,
-            dropout=0.1,
-            depth=2,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            depth=depth,
         )
         
     def compute_loss_preds(self, batch, *args, **kwargs):
