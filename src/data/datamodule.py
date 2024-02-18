@@ -38,7 +38,7 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
-        eeg_norm_strategy: Literal['meanstd', 'log'] = 'meanstd',
+        eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
@@ -63,33 +63,32 @@ class HmsDatamodule(LightningDataModule):
         self.test_transform = None
 
     def build_transforms(self) -> None:
-        # Calculate stats
-        eeg_mean, eeg_std, *_ = build_stats(
-            self.train_dataset, 
-            filepathes=[
-                self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
-                for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
-            ],
-            type_='eeg'
-        )
-        eeg_mean = eeg_mean.astype(np.float32)
-        eeg_std = eeg_std.astype(np.float32)
+        normalize_transform = []
 
-        spectrogram_mean, spectrogram_std, *_ = build_stats(
-            self.train_dataset, 
-            filepathes=[
-                self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
-                for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
-            ],
-            type_='spectrogram'
-        )
-        spectrogram_mean = spectrogram_mean.astype(np.float32)
-        spectrogram_std = spectrogram_std.astype(np.float32)
+        if self.hparams.eeg_norm_strategy is not None:
+            # Calculate stats
+            eeg_mean, eeg_std, *_ = build_stats(
+                self.train_dataset, 
+                filepathes=[
+                    self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
+                    for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
+                ],
+                type_='eeg'
+            )
+            eeg_mean = eeg_mean.astype(np.float32)
+            eeg_std = eeg_std.astype(np.float32)
 
-        self.train_transform = Compose(
-            [
-                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
-                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
+            spectrogram_mean, spectrogram_std, *_ = build_stats(
+                self.train_dataset, 
+                filepathes=[
+                    self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
+                    for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
+                ],
+                type_='spectrogram'
+            )
+            spectrogram_mean = spectrogram_mean.astype(np.float32)
+            spectrogram_std = spectrogram_std.astype(np.float32)
+            normalize_transform = [
                 Normalize(
                     eeg_mean=eeg_mean, 
                     eeg_std=eeg_std,
@@ -97,7 +96,14 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_std=spectrogram_std,
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
-                ),
+                )
+            ]
+
+        self.train_transform = Compose(
+            [
+                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
+                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
+                *normalize_transform,
                 ReshapeToPatches(),
             ]
         )
@@ -105,14 +111,7 @@ class HmsDatamodule(LightningDataModule):
             [
                 CenterSubrecord(),
                 FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
-                Normalize(
-                    eeg_mean=eeg_mean, 
-                    eeg_std=eeg_std,
-                    spectrogram_mean=spectrogram_mean, 
-                    spectrogram_std=spectrogram_std,
-                    eeg_strategy=self.hparams.eeg_norm_strategy,
-                    spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
-                ),
+                *normalize_transform,
                 ReshapeToPatches(),
             ]
         )
