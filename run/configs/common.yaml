@@ -101,7 +101,7 @@ data:
       gaussianize_mode: null
     eeg_norm_strategy: meanstd
     spectrogram_norm_strategy: log
-    cache_dir: .cache
+    cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8
     pin_memory: False
