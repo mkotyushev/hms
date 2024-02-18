@@ -50,7 +50,7 @@ class BaseModule(LightningModule):
 
     @staticmethod
     def check_batch_dims(batch):
-        assert all(map(lambda x: len(x) == len(batch[0]), batch)), \
+        assert all(map(lambda x: len(x) == len(batch['eeg']), batch)), \
             f'All entities in batch must have the same length, got ' \
             f'{list(map(len, batch))}'
 
@@ -78,7 +78,7 @@ class BaseModule(LightningModule):
         """Extract preds and targets from batch.
         Could be overriden for custom batch / prediction structure.
         """
-        y, y_pred = batch['label'].detach(), preds[:, 1].detach().float()
+        y, y_pred = batch['label'].detach(), preds.detach().float()
         y, y_pred = self.remove_nans(y, y_pred)
         y_pred = torch.softmax(y_pred, dim=1)
         return y, y_pred
@@ -96,11 +96,6 @@ class BaseModule(LightningModule):
             # TODO change to >= somehow
             if self.current_epoch == self.hparams.finetuning['unfreeze_before_epoch']:
                 self.unfreeze()
-
-    def on_train_start(self) -> None:
-        # Change dataloader num_workers to 10
-        # after cache is filled
-        self.trainer.datamodule.hparams.num_workers = self.trainer.datamodule.hparams.num_workers_saturated
 
     def unfreeze_only_selected(self):
         """
@@ -134,7 +129,7 @@ class BaseModule(LightningModule):
                 on_step=True,
                 on_epoch=True,
                 prog_bar=True,
-                batch_size=batch[0].shape[0],
+                batch_size=batch['eeg'].shape[0],
             )
         self.update_metrics('train_metrics', preds, batch)
 
@@ -405,6 +400,10 @@ class HmsModule(BaseModule):
                 log_preds, 
                 target,
                 log_target=False,
+                reduction='batchmean',
             )
         }
         return sum(losses.values()), losses, log_preds
+
+    def update_metrics(self, span, preds, batch):
+        """Update train metrics."""
