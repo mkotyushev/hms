@@ -52,7 +52,7 @@ class TrainerWandb(Trainer):
                 save_img(img, self.trainer.log_dir)
         """
         if len(self.loggers) > 0:
-            if isinstance(self.loggers[0], WandbLogger):
+            if isinstance(self.loggers[0], WandbLogger) and self.loggers[0]._experiment is not None:
                 dirpath = self.loggers[0]._experiment.dir
             elif not isinstance(self.loggers[0], TensorBoardLogger):
                 dirpath = self.loggers[0].save_dir
