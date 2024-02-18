@@ -84,11 +84,12 @@ class HmsDatamodule(LightningDataModule):
                 n_samples=10,
                 random_state=123125
             )
+            gaussianize.coefs_ = np.array(gaussianize.coefs_, dtype=np.float32)
         elif self.hparams.load_kwargs['gaussianize_mode'] == 'pre':
             # Note: there is a small dataleak
             # because coefs are fitted on a whole train data
             gaussianize = Gaussianize()
-            gaussianize.coefs_ = EEG_GAUSSIANIZE_COEFS_TRAIN
+            gaussianize.coefs_ = np.array(EEG_GAUSSIANIZE_COEFS_TRAIN, dtype=np.float32)
         else:
             raise ValueError(
                 f'unknown gaussianize_mode '

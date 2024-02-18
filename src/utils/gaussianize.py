@@ -50,7 +50,7 @@ class Gaussianize(sklearn.base.TransformerMixin):
     
     strategy : str, default='lambert'. Possibilities are 'lambert'[1], 'brute'[2] and 'boxcox'[3].
 
-    tol : float, default = 1e-4
+    tol : np.float32, default = 1e-4
 
     max_iter : int, default = 100
         Maximum number of iterations to search for correct parameters of Lambert transform.
@@ -72,7 +72,7 @@ class Gaussianize(sklearn.base.TransformerMixin):
     """
 
     def __init__(self, strategy: Text = 'lambert', 
-                 tol: float = 1e-5, 
+                 tol: np.float32 = 1e-5, 
                  max_iter: int = 100, 
                  verbose: bool = False):
         self.tol = tol
@@ -150,7 +150,7 @@ def w_d(z, delta):
     # Eq. 9
     if delta < _EPS:
         return z
-    return np.sign(z) * np.sqrt(np.real(special.lambertw(delta * z ** 2)) / delta)
+    return np.sign(z) * np.sqrt(np.real(special.lambertw(delta * z ** 2)).astype(np.float32) / delta)
 
 
 def w_t(y, tau):
@@ -164,7 +164,7 @@ def inverse(x, tau):
     return tau[0] + tau[1] * (u * np.exp(u * u * (tau[2] * 0.5)))
 
 
-def igmm(y: np.ndarray, tol: float = 1e-6, max_iter: int = 100):
+def igmm(y: np.ndarray, tol: np.float32 = 1e-6, max_iter: int = 100):
     # Infer mu, sigma, delta using IGMM in Alg.2, Appendix C
     if np.std(y) < _EPS:
         return np.mean(y), np.std(y).clip(_EPS), 0
@@ -287,8 +287,8 @@ if __name__ == '__main__':
     print(len(data), data[0])
     try:
         for i in range(len(data)):
-            data[i] = map(float, data[i])
-        X = np.array(data, dtype=float)  # Data matrix in numpy format
+            data[i] = map(np.float32, data[i])
+        X = np.array(data, dtype=np.float32)  # Data matrix in numpy format
     except:
         raise ValueError("Incorrect data format.\nCheck that you've correctly specified options "
                          "such as continuous or not, \nand if there is a header row or column.\n"
