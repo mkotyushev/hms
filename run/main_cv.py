@@ -25,9 +25,9 @@ logging.basicConfig(
 
 Worker = collections.namedtuple("Worker", ("queue", "process"))
 WorkerInitData = collections.namedtuple(
-    "WorkerInitData", ("fold_index", "sweep_id", "sweep_run_name", "config")
+    "WorkerInitData", ("split_index", "sweep_id", "sweep_run_name", "config")
 )
-WorkerDoneData = collections.namedtuple("WorkerDoneData", ("scores", "fold_index"))
+WorkerDoneData = collections.namedtuple("WorkerDoneData", ("scores", "split_index"))
 
 
 def reset_wandb_env():
@@ -44,7 +44,7 @@ def reset_wandb_env():
 def train(sweep_q, worker_q):
     reset_wandb_env()
     worker_data = worker_q.get()
-    run_name = "{}-{}".format(worker_data.sweep_run_name, worker_data.fold_index)
+    run_name = "{}-{}".format(worker_data.sweep_run_name, worker_data.split_index)
     config = worker_data.config
     run = wandb.init(
         group=worker_data.sweep_id,
@@ -53,7 +53,7 @@ def train(sweep_q, worker_q):
         config=config,
     )
 
-    args = sys.argv[1:] + ['--data.init_args.fold_index', f'{worker_data.fold_index}']
+    args = sys.argv[1:] + ['--data.init_args.split_index', f'{worker_data.split_index}']
     scores = dict()
     try:
         with TempSetContextManager(sys, 'argv', sys.argv[:1]):
@@ -98,7 +98,7 @@ def train(sweep_q, worker_q):
     try:
         run.log(scores)
         wandb.join()
-        sweep_q.put(WorkerDoneData(scores=scores, fold_index=worker_data.fold_index))
+        sweep_q.put(WorkerDoneData(scores=scores, split_index=worker_data.split_index))
     except Exception as e:
         print(e)
     signal.alarm(0)
@@ -123,7 +123,7 @@ def main():
     # Workers will be blocked on a queue waiting to start
     sweep_q = multiprocessing.Queue()
     workers = []
-    for fold_index in range(cli.config.data.init_args.k):
+    for split_index in range(cli.config.data.init_args.n_splits):
         q = multiprocessing.Queue()
         p = multiprocessing.Process(
             target=train, kwargs=dict(sweep_q=sweep_q, worker_q=q)
@@ -141,13 +141,13 @@ def main():
     sweep_run_name = sweep_run.name or sweep_run.id or "unknown"
 
     # Start CV
-    for fold_index in range(cli.config.data.init_args.k):
-        worker = workers[fold_index]
+    for split_index in range(cli.config.data.init_args.n_splits):
+        worker = workers[split_index]
         # start worker
         worker.queue.put(
             WorkerInitData(
                 sweep_id=sweep_id,
-                fold_index=fold_index,
+                split_index=split_index,
                 sweep_run_name=sweep_run_name,
                 config=dict(sweep_run.config),
             )
@@ -155,7 +155,7 @@ def main():
 
     # Collect results
     scores = collections.defaultdict(dict)
-    for _ in range(cli.config.data.init_args.k):
+    for _ in range(cli.config.data.init_args.n_splits):
         # get metric from worker
         result = sweep_q.get(timeout=TIMEOUT_S)
         # wait for worker to finish
@@ -167,11 +167,11 @@ def main():
         try:
             # collect metric to dict & log metric to sweep_run
             for name, value in result.scores.items():
-                scores[name][result.fold_index] = value
+                scores[name][result.split_index] = value
                 sweep_run.log(
                     {
                         f'best_{name}': value,
-                        "fold_index": result.fold_index,
+                        "split_index": result.split_index,
                     }
                 )
         except Exception as e:
@@ -180,10 +180,10 @@ def main():
     # Log mean of metrics
     scores_mean = {
         f'mean_best_{name}': 
-            sum(value for value in fold_index_to_score.values() if value is not None) / \
-            sum(1 for value in fold_index_to_score.values() if value is not None) 
-        for name, fold_index_to_score in scores.items()
-        if sum(1 for value in fold_index_to_score.values() if value is not None) > 0
+            sum(value for value in split_index_to_score.values() if value is not None) / \
+            sum(1 for value in split_index_to_score.values() if value is not None) 
+        for name, split_index_to_score in scores.items()
+        if sum(1 for value in split_index_to_score.values() if value is not None) > 0
     }
 
 

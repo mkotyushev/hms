@@ -1,0 +1,49 @@
+program: run/main_cv.py
+command:
+  - ${env}
+  - python
+  - ${program}
+  - fit
+  - --config
+  - run/configs/common.yaml
+  - ${args}
+method: random
+parameters:
+  trainer.max_epochs:
+    distribution: categorical
+    values: 
+    - 16
+    - 32
+    - 64
+    - 128
+  model.init_args.embed_dim:
+    distribution: categorical
+    values:
+    - 32
+    - 64
+    - 128
+    - 256
+    - 512
+  model.init_args.num_heads:
+    distribution: categorical
+    values:
+    - 1
+    - 2
+    - 4
+    - 8
+    - 16
+    - 32
+  model.init_args.depth:
+    distribution: categorical
+    values:
+    - 2
+    - 4
+    - 8
+  model.init_args.dropout:
+    distribution: uniform
+    max: 0.3
+    min: 0.0
+  model.lr:
+    distribution: log_uniform_values
+    max: 0.01
+    min: 0.0001
