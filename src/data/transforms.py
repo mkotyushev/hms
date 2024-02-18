@@ -11,6 +11,7 @@ from .constants import (
     LABEL_COLS_ORDERED,
     N_SPECTROGRAM_TILES,
     N_EEG_TIME_WINDOW,
+    EEG_COLS_ORDERED,
 )
 
 
@@ -246,7 +247,6 @@ class Normalize:
         spectrogram_std,
         eeg_strategy='meanstd',
         spectrogram_strategy='log',
-        gaussianize=None,
     ):
         self.eeg_mean = eeg_mean
         self.eeg_std = eeg_std
@@ -254,7 +254,6 @@ class Normalize:
         self.spectrogram_std = spectrogram_std
         self.eeg_strategy = eeg_strategy
         self.spectrogram_strategy = spectrogram_strategy
-        self.gaussianize = gaussianize
 
     def __call__(self, **item):
         # s: (T=10000, F=20)
@@ -273,10 +272,6 @@ class Normalize:
         elif self.spectrogram_strategy == 'log':
             abs_, sign = np.abs(eeg), np.sign(eeg)
             eeg = np.log10(abs_ + 1) * sign
-        elif self.spectrogram_strategy in ['gaussianize', 'gaussianize_meanstd']:
-            eeg = self.gaussianize.transform(eeg)
-            if self.spectrogram_strategy == 'gaussianize_meanstd':
-                eeg = (eeg - self.eeg_mean) / self.eeg_std
         else:
             raise ValueError(f'unknown strategy for EEG {self.eeg_strategy}')
         
@@ -284,6 +279,17 @@ class Normalize:
         item['eeg'] = eeg
         
         return item
+
+
+class GaussianizeEegPretransform:
+    def __init__(self, gaussianize):
+        self.gaussianize = gaussianize
+    
+    def __call__(self, df):
+        if self.gaussianize is None or 'EKG' not in df.columns:
+            return df
+        df[EEG_COLS_ORDERED] = self.gaussianize.transform(df[EEG_COLS_ORDERED].values)
+        return df
 
 
 class FillNan:

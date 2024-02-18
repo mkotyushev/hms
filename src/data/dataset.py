@@ -16,12 +16,14 @@ class HmsDataset:
         df_meta: pd.DataFrame, 
         eeg_dirpath: Path, 
         spectrogram_dirpath: Path, 
+        pre_transform: Callable | None = None,
         transform: Callable | None = None,
         cache: Dict[Path, pd.DataFrame] | None = None,
     ):
         self.df_meta = df_meta
         self.eeg_dirpath = eeg_dirpath
         self.spectrogram_dirpath = spectrogram_dirpath
+        self.pre_transform = pre_transform
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
         self.cache = cache
@@ -54,14 +56,20 @@ class HmsDataset:
 
         return item
 
+    def __load_pre_transform(self, path):
+        item = pd.read_parquet(path)
+        if self.pre_transform is not None:
+            item = self.pre_transform(item)  # not by **kwargs
+        return item
+
     def read_parquet(self, path: Path):
         if self.cache is None:
-            item = pd.read_parquet(path)
+            item = self.__load_pre_transform(path)
         else:
             if path in self.cache:
                 item = self.cache[path]
             else:
-                item = pd.read_parquet(path)
+                item = self.__load_pre_transform(path)
                 self.cache[path] = item
         return item
 

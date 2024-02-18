@@ -153,7 +153,6 @@ def build_stats(
     dataset, 
     filepathes: List[Path], 
     type_: Literal['eeg', 'spectrogram'] = 'eeg',
-    gaussianize: Gaussianize | None = None
 ):
     assert type_ in ['eeg', 'spectrogram']
     cols = SPECTROGRAM_COLS_ORDERED if type_ == 'spectrogram' else EEG_COLS_ORDERED
@@ -165,8 +164,6 @@ def build_stats(
         df = dataset.read_parquet(filepath)
         df = df.dropna(subset=cols)
         values = df[cols].values
-        if gaussianize is not None:
-            values = gaussianize.transform(values)
 
         means.append(values.mean(axis=0))
         counts.append(len(df.index))
@@ -187,8 +184,6 @@ def build_stats(
         df = dataset.read_parquet(filepath)
         df = df.dropna(subset=cols)
         values = df[cols].values
-        if gaussianize is not None:
-            values = gaussianize.transform(values)
 
         means_sq.append(((values - mean[None, :]) ** 2).mean(axis=0))
     std = np.average(means_sq, axis=0, weights=counts) ** 0.5

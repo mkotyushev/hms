@@ -19,6 +19,7 @@ from src.data.transforms import (
     Compose,
     Normalize,
     FillNan,
+    GaussianizeEegPretransform,
 )
 from src.utils.utils import (
     CacheDictWithSave,
@@ -40,8 +41,8 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
-        compute_gaussianize: bool = False,
-        eeg_norm_strategy: Literal['meanstd', 'log', 'gaussianize', 'gaussianize_meanstd', None] = 'meanstd',
+        gaussianize_mode: Literal['pre', 'online', None] = None,
+        eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
@@ -64,23 +65,31 @@ class HmsDatamodule(LightningDataModule):
         self.train_transform = None
         self.val_transform = None
         self.test_transform = None
+        self.pre_transform = GaussianizeEegPretransform(
+            gaussianize=self.build_gaussianize(),
+        )
 
         self.cache = None
 
-    def build_train_stats(self):
+    def build_gaussianize(self):
         # Gaussianize EEG
-        if self.hparams.compute_gaussianize:
+        gaussianize = None
+        if self.hparams.gaussianize_mode == 'online':
             gaussianize = build_gaussianize(
                 self.train_dataset, 
                 n_samples=10,
                 random_state=123125
             )
-        else:
+        elif self.hparams.gaussianize_mode == 'pre':
             # Note: there is a small dataleak
             # because coefs are fitted on a whole train data
             gaussianize = Gaussianize()
             gaussianize.coefs_ = EEG_GAUSSIANIZE_COEFS_TRAIN
+        else:
+            assert self.hparams.gaussianize_mode is None
+        return gaussianize
 
+    def build_train_stats(self):
         # EEG stats
         eeg_mean, eeg_std, *_ = build_stats(
             self.train_dataset, 
@@ -89,7 +98,6 @@ class HmsDatamodule(LightningDataModule):
                 for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
             ],
             type_='eeg',
-            gaussianize=gaussianize,
         )
         eeg_mean = eeg_mean.astype(np.float32)
         eeg_std = eeg_std.astype(np.float32)
@@ -106,13 +114,12 @@ class HmsDatamodule(LightningDataModule):
         spectrogram_mean = spectrogram_mean.astype(np.float32)
         spectrogram_std = spectrogram_std.astype(np.float32)
 
-        return gaussianize
+        return eeg_mean, eeg_std, spectrogram_mean, spectrogram_std
 
     def build_transforms(self) -> None:
         eeg_mean, eeg_std, spectrogram_mean, spectrogram_std = 0, 1, 0, 1
-        gaussianize = None
         if self.hparams.eeg_norm_strategy is not None:
-            eeg_mean, eeg_std, spectrogram_mean, spectrogram_std, gaussianize = \
+            eeg_mean, eeg_std, spectrogram_mean, spectrogram_std = \
                 self.build_train_stats()
 
         self.train_transform = Compose(
@@ -126,7 +133,6 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_std=spectrogram_std,
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
-                    gaussianize=gaussianize,
                 ),
                 ReshapeToPatches(),
             ]
@@ -142,7 +148,6 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_std=spectrogram_std,
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
-                    gaussianize=gaussianize,
                 ),
                 ReshapeToPatches(),
             ]
@@ -240,6 +245,7 @@ class HmsDatamodule(LightningDataModule):
                 df_meta_train,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                pre_transform=self.pre_transform,
                 transform=None,  # Here transform depend on the dataset, so will be set later
                 cache=self.cache,
             )
@@ -251,6 +257,7 @@ class HmsDatamodule(LightningDataModule):
                 df_meta_val,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                pre_transform=self.pre_transform,
                 transform=self.val_transform,
                 cache=self.cache,
             )
