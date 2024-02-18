@@ -258,12 +258,12 @@ def build_has_outliers(
 
 
 def build_gaussianize(
-    dataset, 
+    df_meta, 
     n_sample=10,
     random_state=123125,
 ):
     eeds = []
-    for eed_id in tqdm(sorted(dataset.df_meta['eeg_id'].unique())):
+    for eed_id in tqdm(sorted(df_meta['eeg_id'].unique())):
         eed = pd.read_parquet(f"/workspace/data_external/train_eegs/{eed_id}.parquet")
         eed = eed.dropna(subset=EEG_COLS_ORDERED)
         eeds.append(eed.sample(n_sample, random_state=random_state))

@@ -65,18 +65,17 @@ class HmsDatamodule(LightningDataModule):
         self.train_transform = None
         self.val_transform = None
         self.test_transform = None
-        self.pre_transform = GaussianizeEegPretransform(
-            gaussianize=self.build_gaussianize(),
-        )
+        self.pre_transform = None
 
         self.cache = None
 
-    def build_gaussianize(self):
+    def build_gaussianize(self, df_meta):
         # Gaussianize EEG
         gaussianize = None
         if self.hparams.gaussianize_mode == 'online':
+            # Build coeffs from a given dataset
             gaussianize = build_gaussianize(
-                self.train_dataset, 
+                df_meta, 
                 n_samples=10,
                 random_state=123125
             )
@@ -239,6 +238,11 @@ class HmsDatamodule(LightningDataModule):
             )
         )[self.hparams.split_index]
         df_meta_train, df_meta_val = df_meta.iloc[train_indices], df_meta.iloc[val_indices]
+
+        # Build pre-transform
+        self.pre_transform = GaussianizeEegPretransform(
+            gaussianize=self.build_gaussianize(df_meta_train),
+        )
 
         if self.train_dataset is None:
             self.train_dataset = HmsDataset(
