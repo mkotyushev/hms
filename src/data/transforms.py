@@ -153,7 +153,7 @@ class Subrecord:
 class RandomSubrecord(Subrecord):
     def __call__(self, **item):
         # Sample single sub-record
-        subrecord = item['meta'].sample()
+        subrecord = item['meta'].sample().squeeze()
         
         # Select
         item = self._select_by_subrecord(subrecord, **item)
