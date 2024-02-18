@@ -394,6 +394,7 @@ class HmsModule(BaseModule):
         dropout=0.1,
         depth=8,
         cheap_cross=False,
+        lr=None,
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
