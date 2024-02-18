@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
@@ -36,6 +36,8 @@ class HmsDatamodule(LightningDataModule):
         dataset_dirpath: Path,	
         split_index: int,
         n_splits: int = 5,
+        eeg_norm_strategy: Literal['meanstd'] = 'meanstd',
+        spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
@@ -91,8 +93,8 @@ class HmsDatamodule(LightningDataModule):
                     eeg_std=eeg_std,
                     spectrogram_mean=spectrogram_mean, 
                     spectrogram_std=spectrogram_std,
-                    eeg_strategy='meanstd',
-                    spectrogram_strategy='log',
+                    eeg_strategy=self.hparams.eeg_norm_strategy,
+                    spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
                 ReshapeToPatches(),
             ]
@@ -106,8 +108,8 @@ class HmsDatamodule(LightningDataModule):
                     eeg_std=eeg_std,
                     spectrogram_mean=spectrogram_mean, 
                     spectrogram_std=spectrogram_std,
-                    eeg_strategy='meanstd',
-                    spectrogram_strategy='log',
+                    eeg_strategy=self.hparams.eeg_norm_strategy,
+                    spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
                 ReshapeToPatches(),
             ]

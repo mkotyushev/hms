@@ -96,6 +96,8 @@ data:
     dataset_dirpath: '/workspace/data_external/'
     split_index: 0
     n_splits: 5
+    eeg_norm_strategy: meanstd
+    spectrogram_norm_strategy: log
     cache_dir: .cache
     batch_size: 32
     num_workers: 8
