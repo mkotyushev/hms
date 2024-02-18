@@ -210,18 +210,38 @@ class Compose:
 
 
 class Normalize:
-    def __init__(self, eeg_mean, eeg_std):
+    def __init__(
+        self, 
+        eeg_mean, 
+        eeg_std,
+        spectrogram_mean, 
+        spectrogram_std,
+        eeg_strategy='meanstd',
+        spectrogram_strategy='log',
+    ):
         self.eeg_mean = eeg_mean
         self.eeg_std = eeg_std
+        self.spectrogram_mean = spectrogram_mean
+        self.spectrogram_std = spectrogram_std
+        self.eeg_strategy = eeg_strategy
+        self.spectrogram_strategy = spectrogram_strategy
 
     def __call__(self, **item):
         # s: (T=10000, F=20)
         spectrogram = item['spectrogram']
-        spectrogram = np.log10(spectrogram + 1)
+        if self.spectrogram_strategy == 'meanstd':
+            spectrogram = (spectrogram - self.spectrogram_mean) / self.spectrogram_std
+        elif self.spectrogram_strategy == 'log':
+            spectrogram = np.log10(spectrogram + 1)
+        else:
+            raise ValueError(f'unknown strategy for spectrogram {self.spectrogram_strategy}')
 
         # e: (T=300, F=400)
         eeg = item['eeg']
-        eeg = (eeg - self.eeg_mean) / self.eeg_std
+        if self.eeg_strategy == 'meanstd':
+            eeg = (eeg - self.eeg_mean) / self.eeg_std
+        else:
+            raise ValueError(f'unknown strategy for EEG {self.eeg_strategy}')
         
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg

@@ -71,7 +71,7 @@ class HmsDatamodule(LightningDataModule):
         eeg_mean = eeg_mean.astype(np.float32)
         eeg_std = eeg_std.astype(np.float32)
 
-        spectrogram_mean, *_ = build_stats(
+        spectrogram_mean, spectrogram_std, *_ = build_stats(
             self.train_dataset, 
             filepathes=[
                 self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
@@ -80,12 +80,20 @@ class HmsDatamodule(LightningDataModule):
             type_='spectrogram'
         )
         spectrogram_mean = spectrogram_mean.astype(np.float32)
+        spectrogram_std = spectrogram_std.astype(np.float32)
 
         self.train_transform = Compose(
             [
                 RandomSubrecord(),
                 FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
-                Normalize(eeg_mean=eeg_mean, eeg_std=eeg_std),
+                Normalize(
+                    eeg_mean=eeg_mean, 
+                    eeg_std=eeg_std,
+                    spectrogram_mean=spectrogram_mean, 
+                    spectrogram_std=spectrogram_std,
+                    eeg_strategy='meanstd',
+                    spectrogram_strategy='log',
+                ),
                 ReshapeToPatches(),
             ]
         )
@@ -93,7 +101,14 @@ class HmsDatamodule(LightningDataModule):
             [
                 CenterSubrecord(),
                 FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
-                Normalize(eeg_mean=eeg_mean, eeg_std=eeg_std),
+                Normalize(
+                    eeg_mean=eeg_mean, 
+                    eeg_std=eeg_std,
+                    spectrogram_mean=spectrogram_mean, 
+                    spectrogram_std=spectrogram_std,
+                    eeg_strategy='meanstd',
+                    spectrogram_strategy='log',
+                ),
                 ReshapeToPatches(),
             ]
         )
