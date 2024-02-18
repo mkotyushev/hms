@@ -124,6 +124,12 @@ class HmsDatamodule(LightningDataModule):
         if self.hparams.eeg_norm_strategy is not None:
             eeg_mean, eeg_std, spectrogram_mean, spectrogram_std = \
                 self.build_train_stats()
+        logger.info(
+            f'eeg_mean: {eeg_mean}\n'
+            f'eeg_std: {eeg_std}\n'
+            f'spectrogram_mean: {spectrogram_mean}\n'
+            f'spectrogram_std: {spectrogram_std}'
+        )
 
         self.train_transform = Compose(
             [
