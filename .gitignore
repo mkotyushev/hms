@@ -2,5 +2,6 @@
 lightning_logs/
 wandb/
 pipe/
+hms/
 .cache/
 *.csv
