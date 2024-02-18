@@ -62,6 +62,8 @@ class HmsDatamodule(LightningDataModule):
         self.val_transform = None
         self.test_transform = None
 
+        self.cache = None
+
     def build_transforms(self) -> None:
         normalize_transform = []
 
@@ -120,29 +122,26 @@ class HmsDatamodule(LightningDataModule):
         )
 
     def make_cache(self, parquet_filepathes) -> None:
-        cache_save_path = None
-        if self.hparams.cache_dir is not None:
-            # Name the cache with md5 hash of 
-            # /workspace/contrails/src/data/datasets.py file
-            # and ContrailsDataset parameters
-            # to avoid using cache when the dataset handling 
-            # is changed.
-            with open(Path(__file__).parent / 'dataset.py', 'rb') as f:
-                datasets_content = f.read()
-                datasets_file_hash = hashlib.md5(
-                    datasets_content + 
-                    str(self.hparams.load_kwargs).encode()
-                ).hexdigest()
-            cache_save_path = self.hparams.cache_dir / f'{datasets_file_hash}.joblib'
+        if self.hparams.cache_dir is None:
+            return
+        
+        # Name the cache with md5 hash of 
+        # /workspace/contrails/src/data/datasets.py file
+        # and ContrailsDataset parameters
+        # to avoid using cache when the dataset handling 
+        # is changed.
+        with open(Path(__file__).parent / 'dataset.py', 'rb') as f:
+            datasets_content = f.read()
+            datasets_file_hash = hashlib.md5(
+                datasets_content + 
+                str(self.hparams.load_kwargs).encode()
+            ).hexdigest()
+        cache_save_path = self.hparams.cache_dir / f'{datasets_file_hash}.joblib'
 
         self.cache = CacheDictWithSave(
             indices=parquet_filepathes,
             cache_save_path=cache_save_path,
-        )
-
-        if cache_save_path is None:
-            return
-        
+        )        
         self.hparams.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Check that only one cache file is in the cache dir
