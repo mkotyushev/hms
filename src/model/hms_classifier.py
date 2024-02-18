@@ -93,11 +93,15 @@ def embed(x, patch_embed, pos_embed, cls_token, unk_token):
     # Patch embed
     x = patch_embed(x)
 
+    # Set patches with nan to unk token
+    nan_mask = x.isnan().any(-1)
+    n_nans = nan_mask.sum()
+    nan_mask = nan_mask[..., None].expand(x.size())
+    x[nan_mask] = unk_token.expand(n_nans, -1).reshape(-1)
+
     # Cat cls token
     cls_token = repeat(cls_token, '() n d -> b n d', b = B)
     x = torch.cat((cls_token, x), dim=1)
-
-    # TODO: Set patches with nan to unk token
 
     # Pos embed
     x += pos_embed[:, :(N + 1)]
@@ -127,11 +131,11 @@ class HmsClassifier(nn.Module):
         # Pos embedding
         self.pos_embed_s = nn.Parameter(torch.randn(1, num_patches_s + 1, embed_dim))
         self.cls_token_s = nn.Parameter(torch.randn(1, 1, embed_dim))
-        self.unk_token_s = nn.Parameter(torch.randn(1, 1, embed_dim))
+        self.unk_token_s = nn.Parameter(torch.randn(embed_dim))
 
         self.pos_embed_e = nn.Parameter(torch.randn(1, num_patches_e + 1, embed_dim))
         self.cls_token_e = nn.Parameter(torch.randn(1, 1, embed_dim))
-        self.unk_token_e = nn.Parameter(torch.randn(1, 1, embed_dim))
+        self.unk_token_e = nn.Parameter(torch.randn(embed_dim))
 
         # Common
         self.dropout = nn.Dropout(dropout)
