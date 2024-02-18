@@ -218,10 +218,10 @@ class HmsDatamodule(LightningDataModule):
         # Read metadata & prepare filepathes
         parquet_filepathes = [
             self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
-            for spectrogram_id in df_meta['spectrogram_id'].unique()
+            for spectrogram_id in sorted(df_meta['spectrogram_id'].unique())
         ] + [
             self.hparams.dataset_dirpath / 'train_eegs' / f'{eeg_id}.parquet'
-            for eeg_id in df_meta['eeg_id'].unique()
+            for eeg_id in sorted(df_meta['eeg_id'].unique())
         ]
 
         self.make_cache(
