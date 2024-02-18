@@ -236,10 +236,10 @@ class FillNan:
 
     def __call__(self, **item):
         spectrogram = item['spectrogram']
-        spectrogram[spectrogram.isnan().any(1)] = self.spectrogram_fill
+        spectrogram[np.isnan(spectrogram).any(1)] = self.spectrogram_fill
 
         eeg = item['eeg']
-        eeg[eeg.isnan().any(1)] = self.eeg_fill
+        eeg[np.isnan(eeg).any(1)] = self.eeg_fill
 
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg
