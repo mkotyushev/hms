@@ -24,6 +24,7 @@ from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
     build_stats,
+    build_gaussianize,
 )
 
 
@@ -38,7 +39,7 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
-        eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
+        eeg_norm_strategy: Literal['meanstd', 'log', 'gaussianize', 'gaussianize_meanstd', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
@@ -64,33 +65,53 @@ class HmsDatamodule(LightningDataModule):
 
         self.cache = None
 
+    def build_train_stats(self, do_gaussianize=False):
+        # Gaussianize EEG
+        gaussianize = None
+        if do_gaussianize:
+            gaussianize = build_gaussianize(
+                self.train_dataset, 
+                n_samples=10,
+                random_state=123125
+            )
+
+        # EEG stats
+        eeg_mean, eeg_std, *_ = build_stats(
+            self.train_dataset, 
+            filepathes=[
+                self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
+                for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
+            ],
+            type_='eeg',
+            gaussianize=gaussianize,
+        )
+        eeg_mean = eeg_mean.astype(np.float32)
+        eeg_std = eeg_std.astype(np.float32)
+
+        # Spectogram stats
+        spectrogram_mean, spectrogram_std, *_ = build_stats(
+            self.train_dataset, 
+            filepathes=[
+                self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
+                for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
+            ],
+            type_='spectrogram',
+        )
+        spectrogram_mean = spectrogram_mean.astype(np.float32)
+        spectrogram_std = spectrogram_std.astype(np.float32)
+
+        return gaussianize
+
     def build_transforms(self) -> None:
-        normalize_transform = []
-
+        eeg_mean, eeg_std, spectrogram_mean, spectrogram_std = 0, 1, 0, 1
+        gaussianize = None
         if self.hparams.eeg_norm_strategy is not None:
-            # Calculate stats
-            eeg_mean, eeg_std, *_ = build_stats(
-                self.train_dataset, 
-                filepathes=[
-                    self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
-                    for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
-                ],
-                type_='eeg'
-            )
-            eeg_mean = eeg_mean.astype(np.float32)
-            eeg_std = eeg_std.astype(np.float32)
+            eeg_mean, eeg_std, spectrogram_mean, spectrogram_std, gaussianize = \
+                self.build_train_stats(self.hparams.eeg_norm_strategy == 'gaussianize_meanstd')
 
-            spectrogram_mean, spectrogram_std, *_ = build_stats(
-                self.train_dataset, 
-                filepathes=[
-                    self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
-                    for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
-                ],
-                type_='spectrogram'
-            )
-            spectrogram_mean = spectrogram_mean.astype(np.float32)
-            spectrogram_std = spectrogram_std.astype(np.float32)
-            normalize_transform = [
+        self.train_transform = Compose(
+            [
+                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(
                     eeg_mean=eeg_mean, 
@@ -99,24 +120,24 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_std=spectrogram_std,
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
-                )
-            ]
-        else:
-            normalize_transform = [
-                FillNan(eeg_fill=0, spectrogram_fill=0),
-            ]
-
-        self.train_transform = Compose(
-            [
-                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
-                *normalize_transform,
+                    gaussianize=gaussianize,
+                ),
                 ReshapeToPatches(),
             ]
         )
         self.val_transform = self.test_transform = Compose(
             [
                 CenterSubrecord(),
-                *normalize_transform,
+                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
+                Normalize(
+                    eeg_mean=eeg_mean, 
+                    eeg_std=eeg_std,
+                    spectrogram_mean=spectrogram_mean, 
+                    spectrogram_std=spectrogram_std,
+                    eeg_strategy=self.hparams.eeg_norm_strategy,
+                    spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
+                    gaussianize=gaussianize,
+                ),
                 ReshapeToPatches(),
             ]
         )

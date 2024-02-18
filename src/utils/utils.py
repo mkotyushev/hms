@@ -19,6 +19,7 @@ from src.data.constants import (
     SPECTROGRAM_COLS_ORDERED, 
     EEG_COLS_ORDERED,
 )
+from .gaussianize import Gaussianize
 
 
 logger = logging.getLogger(__name__)
@@ -151,7 +152,8 @@ def state_norm(module: torch.nn.Module, norm_type: Union[float, int, str], group
 def build_stats(
     dataset, 
     filepathes: List[Path], 
-    type_: Literal['eeg', 'spectrogram'] = 'eeg'
+    type_: Literal['eeg', 'spectrogram'] = 'eeg',
+    gaussianize: Gaussianize | None = None
 ):
     assert type_ in ['eeg', 'spectrogram']
     cols = SPECTROGRAM_COLS_ORDERED if type_ == 'spectrogram' else EEG_COLS_ORDERED
@@ -162,17 +164,21 @@ def build_stats(
     for filepath in tqdm(filepathes, desc=f'Calculating mean for {type_}'):
         df = dataset.read_parquet(filepath)
         df = df.dropna(subset=cols)
-        means.append(df[cols].values.mean(axis=0))
+        values = df[cols].values
+        if gaussianize is not None:
+            values = gaussianize.transform(values)
+
+        means.append(values.mean(axis=0))
         counts.append(len(df.index))
 
         if min_ is None:
-            min_ = df[cols].values.min(axis=0)
+            min_ = values.min(axis=0)
         else:
-            min_ = np.minimum(min_, df[cols].values.min(axis=0))
+            min_ = np.minimum(min_, values.min(axis=0))
         if max_ is None:
-            max_ = df[cols].values.max(axis=0)
+            max_ = values.max(axis=0)
         else:
-            max_ = np.maximum(max_, df[cols].values.max(axis=0))
+            max_ = np.maximum(max_, values.max(axis=0))
     mean = np.average(means, axis=0, weights=counts)
 
     # Std
@@ -180,7 +186,11 @@ def build_stats(
     for filepath in tqdm(filepathes, desc=f'Calculating std for {type_}'):
         df = dataset.read_parquet(filepath)
         df = df.dropna(subset=cols)
-        means_sq.append(((df[cols].values - mean[None, :]) ** 2).mean(axis=0))
+        values = df[cols].values
+        if gaussianize is not None:
+            values = gaussianize.transform(values)
+
+        means_sq.append(((values - mean[None, :]) ** 2).mean(axis=0))
     std = np.average(means_sq, axis=0, weights=counts) ** 0.5
 
     return mean, std, min_, max_
@@ -251,6 +261,21 @@ def build_has_outliers(
     
     return has_outlier
 
+
+def build_gaussianize(
+    dataset, 
+    n_sample=10,
+    random_state=123125,
+):
+    eeds = []
+    for eed_id in tqdm(sorted(dataset.df_meta['eeg_id'].unique())):
+        eed = pd.read_parquet(f"/workspace/data_external/train_eegs/{eed_id}.parquet")
+        eed = eed.dropna(subset=EEG_COLS_ORDERED)
+        eeds.append(eed.sample(n_sample, random_state=random_state))
+    df_sample = pd.concat(eeds)
+    gaussianize = Gaussianize(max_iter=100, tol=1e-4)
+    gaussianize.fit(df_sample.values, names=df_sample.columns)
+    return gaussianize
 
 
 class CacheDictWithSave(dict):
