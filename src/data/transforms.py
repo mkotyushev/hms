@@ -175,12 +175,10 @@ class RandomSubrecord(Subrecord):
 
             # Interpolate
             cols_to_interpolate = LABEL_COLS_ORDERED + ['eeg_label_offset_seconds', 'spectrogram_label_offset_seconds']
-            x = (
+            subrecord.loc[:, cols_to_interpolate] = (
                 (1 - alpha) * subrecord[cols_to_interpolate].values[0] + 
                 alpha * subrecord_next[cols_to_interpolate].values[0]
             )
-            print(subrecord.dtypes, x.dtypes)
-            subrecord.loc[:, cols_to_interpolate] = x
             
             # Squeeze to Series
             subrecord = subrecord.squeeze()

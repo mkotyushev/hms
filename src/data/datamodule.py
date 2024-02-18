@@ -178,7 +178,7 @@ class HmsDatamodule(LightningDataModule):
 
     def read_meta(self):
         df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
-        df_meta[LABEL_COLS_ORDERED] = df_meta[LABEL_COLS_ORDERED].astype(np.float32)
+        df_meta[LABEL_COLS_ORDERED] = df_meta[LABEL_COLS_ORDERED].astype(float)
         return df_meta
 
     def setup(self, stage: str = None) -> None:
