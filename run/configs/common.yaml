@@ -8,7 +8,7 @@ trainer:
     - class_path: lightning.pytorch.callbacks.LearningRateMonitor
       init_args:
         logging_interval: step
-    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+    - class_path: src.utils.utils.ModelCheckpointNoSave
       init_args:
         save_top_k: 1
         monitor: val_loss_kld
@@ -64,6 +64,7 @@ model:
     num_heads: 4
     dropout: 0.1
     depth: 2
+    cheap_cross: false
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:

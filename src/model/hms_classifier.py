@@ -20,7 +20,7 @@ class Mlp(nn.Module):
 
 
 class HmsEncoderLayer(nn.Module):
-    def __init__(self, embed_dim, num_heads, dropout):
+    def __init__(self, embed_dim, num_heads, dropout, cheap_cross=False):
         super().__init__()
 
         # S
@@ -64,6 +64,7 @@ class HmsEncoderLayer(nn.Module):
         # Common
         self.dropout = nn.Dropout(dropout)
         self.activation = nn.ReLU()
+        self.cheap_cross = cheap_cross
     
     def forward(self, x):
         x_s, x_e = x
@@ -73,9 +74,12 @@ class HmsEncoderLayer(nn.Module):
         x_e = self.norm_e_1(x_e + self.dropout(self.self_attn_e(x_e, x_e, x_e, need_weights=False)[0]))
 
         # Cross
-        # TODO: implement cheap crossvit trick to avoid costly cross attention
-        x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e, x_e, need_weights=False)[0]))
-        x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s, x_s, need_weights=False)[0]))
+        if self.cheap_cross:
+            x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e[:, 0][:, None, :], x_e[:, 0][:, None, :], need_weights=False)[0]))
+            x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s[:, 0][:, None, :], x_s[:, 0][:, None, :], need_weights=False)[0]))
+        else:
+            x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e, x_e, need_weights=False)[0]))
+            x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s, x_s, need_weights=False)[0]))
         x_s, x_e = x_s_after_cross, x_e_after_cross
 
         # Mlp
@@ -126,6 +130,7 @@ class HmsClassifier(nn.Module):
         num_heads, 
         dropout,
         depth,
+        cheap_cross,
     ):
         super().__init__()
 
@@ -148,7 +153,7 @@ class HmsClassifier(nn.Module):
         # Encoder
         self.encoder = nn.Sequential(
             *[
-                HmsEncoderLayer(embed_dim, num_heads, dropout)
+                HmsEncoderLayer(embed_dim, num_heads, dropout, cheap_cross)
                 for _ in range(depth)
             ]
         )

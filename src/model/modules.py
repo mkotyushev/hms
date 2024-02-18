@@ -381,6 +381,7 @@ class HmsModule(BaseModule):
         num_heads=8,
         dropout=0.1,
         depth=8,
+        cheap_cross=False,
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
@@ -394,6 +395,7 @@ class HmsModule(BaseModule):
             num_heads=num_heads,
             dropout=dropout,
             depth=depth,
+            cheap_cross=cheap_cross,
         )
         
     def compute_loss_preds(self, batch, *args, **kwargs):
