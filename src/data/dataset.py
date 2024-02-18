@@ -40,6 +40,7 @@ class HmsDataset:
         item = {
             'eeg': df_eeg[EEG_COLS_ORDERED].values,
             'spectogram': df_spectrogram[SPECTROGRAM_COLS_ORDERED].values,
+            'spectogram_time': df_spectrogram['time'].values,
             'label': df[LABEL_COLS_ORDERED].values,
             'meta': df,
         }
