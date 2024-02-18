@@ -1,4 +1,4 @@
-program: run/main_cv.py
+program: run/main.py
 command:
   - ${env}
   - python
