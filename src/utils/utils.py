@@ -1,3 +1,5 @@
+import joblib
+import logging
 import numpy as np
 import torch
 from typing import Dict, Optional, Union
@@ -15,6 +17,8 @@ from src.data.constants import (
     EEG_COLS_ORDERED,
 )
 
+
+logger = logging.getLogger(__name__)
 
 ###################################################################
 ########################## General Utils ##########################
@@ -237,3 +241,68 @@ def build_has_outliers(
         has_outlier.append(any(values))
     
     return has_outlier
+
+
+
+class CacheDictWithSave(dict):
+    """Cache dict that saves itself to disk when full."""
+    def __init__(self, indices, cache_save_path: Optional[Path] = None, *args, **kwargs):
+        assert len(set(indices)) == len(indices)
+
+        self.indices = indices
+        self.cache_save_path = cache_save_path
+        self.cache_already_on_disk = False
+        
+        super().__init__(*args, **kwargs)
+
+        if self.cache_save_path is not None and self.cache_save_path.exists():
+            logger.info(f'Loading cache from {self.cache_save_path}')
+            self.load()
+            assert len(self) >= len(indices), \
+                f'Cache loaded from {self.cache_save_path} has {len(self)} records, ' \
+                f'but {len(indices)} were expected.'
+
+            assert all(index in self for index in indices)
+
+    def __setitem__(self, index, value):
+        # Hack to allow setting items in joblib.load()
+        initialized = (
+            hasattr(self, 'indices') and
+            hasattr(self, 'cache_save_path') and
+            hasattr(self, 'cache_already_on_disk')
+        )
+        if not initialized:
+            super().__setitem__(index, value)
+            return
+        
+        if len(self) >= len(self.indices) + 1:
+            logger.warning(
+                f'More records than expected '
+                f'({len(self)} >= {len(self.indices) + 1}) '
+                f'in cache. Will be added, but not saved to disk.'
+            )
+        super().__setitem__(index, value)
+        if (
+            not self.cache_already_on_disk and 
+            len(self) >= len(self.indices) and 
+            self.cache_save_path is not None
+        ):
+            self.save()
+
+    def load(self):
+        cache = joblib.load(self.cache_save_path)
+        self.update(cache)
+        self.cache_already_on_disk = True
+
+    def save(self):
+        assert not self.cache_already_on_disk, \
+            f'cache_already_on_disk = True, but save() was called. ' \
+            f'This should not happen.'
+        assert not self.cache_save_path.exists(), \
+            f'Cache save path {self.cache_save_path} already exists ' \
+            f'but was not loaded from disk (cache_already_on_disk = False). ' \
+            f'This should not happen.'
+
+        logger.info(f'Saving cache to {self.cache_save_path}')
+        joblib.dump(self, self.cache_save_path)
+        self.cache_already_on_disk = True
