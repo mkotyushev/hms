@@ -1,7 +1,9 @@
 import joblib
 import logging
 import numpy as np
+import pandas as pd
 import torch
+from collections import defaultdict
 from typing import Dict, Optional, Union
 from lightning import Trainer
 from lightning.pytorch.cli import LightningCLI
@@ -9,6 +11,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from pathlib import Path
 from tqdm.auto import tqdm
+from torch.utils.data import default_collate
 from typing import Dict, List, Literal, Tuple
 from weakref import proxy
 
@@ -306,3 +309,30 @@ class CacheDictWithSave(dict):
         logger.info(f'Saving cache to {self.cache_save_path}')
         joblib.dump(self, self.cache_save_path)
         self.cache_already_on_disk = True
+
+
+def hms_collate_fn(batch):
+    """Collate function for hoa dataset.
+    batch: list of dicts of key:str, value: np.ndarray | list | None
+    output: dict of torch.Tensor
+    """
+    output = defaultdict(list)
+    for sample in batch:
+        for k, v in sample.items():
+            if v is None:
+                continue
+
+            output[k].append(v)
+    
+    for k, v in output.items():
+        if isinstance(v[0], str) or (hasattr(v[0], 'dtype') and v[0].dtype == object):
+            output[k] = v
+        elif isinstance(v[0], pd.Series):
+            output[k] = pd.DataFrame(v)
+        elif isinstance(v[0], np.ndarray):
+            v = np.stack(v)
+            output[k] = default_collate(v)
+        else:
+            output[k] = default_collate(v)
+    
+    return output
