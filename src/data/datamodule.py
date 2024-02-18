@@ -89,6 +89,7 @@ class HmsDatamodule(LightningDataModule):
             spectrogram_mean = spectrogram_mean.astype(np.float32)
             spectrogram_std = spectrogram_std.astype(np.float32)
             normalize_transform = [
+                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(
                     eeg_mean=eeg_mean, 
                     eeg_std=eeg_std,
@@ -98,11 +99,14 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 )
             ]
+        else:
+            normalize_transform = [
+                FillNan(eeg_fill=0, spectrogram_fill=0),
+            ]
 
         self.train_transform = Compose(
             [
                 RandomSubrecord(mode=self.hparams.random_subrecord_mode),
-                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 *normalize_transform,
                 ReshapeToPatches(),
             ]
@@ -110,7 +114,6 @@ class HmsDatamodule(LightningDataModule):
         self.val_transform = self.test_transform = Compose(
             [
                 CenterSubrecord(),
-                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 *normalize_transform,
                 ReshapeToPatches(),
             ]
