@@ -10,6 +10,7 @@ from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
 
+from .constants import LABEL_COLS_ORDERED
 from src.data.dataset import HmsDataset
 from src.data.transforms import (
     RandomSubrecord,
@@ -36,6 +37,7 @@ class HmsDatamodule(LightningDataModule):
         dataset_dirpath: Path,	
         split_index: int,
         n_splits: int = 5,
+        random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         eeg_norm_strategy: Literal['meanstd', 'log'] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
@@ -86,7 +88,7 @@ class HmsDatamodule(LightningDataModule):
 
         self.train_transform = Compose(
             [
-                RandomSubrecord(),
+                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(
                     eeg_mean=eeg_mean, 
@@ -173,9 +175,15 @@ class HmsDatamodule(LightningDataModule):
             }
             yaml.dump(cache_info, f, default_flow_style=False)
 
-    def setup(self, stage: str = None) -> None:
-        # Read metadata & prepare filepathes
+    def read_meta(self):
         df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
+        df_meta[LABEL_COLS_ORDERED] = df_meta[LABEL_COLS_ORDERED].astype(np.float32)
+        return df_meta
+
+    def setup(self, stage: str = None) -> None:
+        df_meta = self.read_meta()
+
+        # Read metadata & prepare filepathes
         parquet_filepathes = [
             self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
             for spectrogram_id in df_meta['spectrogram_id'].unique()

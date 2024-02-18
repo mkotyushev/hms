@@ -1,5 +1,7 @@
+import math
 import numpy as np
 import random
+from copy import deepcopy
 from typing import Dict, List, Callable
 
 from .constants import (
@@ -153,9 +155,35 @@ class Subrecord:
 
 
 class RandomSubrecord(Subrecord):
+    def __init__(self, mode='discrete'):
+        self.mode = mode
+    
     def __call__(self, **item):
-        # Sample single sub-record
-        subrecord = item['meta'].sample().squeeze()
+        if self.mode == 'discrete':
+            # Sample single sub-record
+            subrecord = item['meta'].sample().squeeze()
+        elif self.mode == 'cont':
+            # Select index
+            val = np.random.rand() * (len(item['meta'].index) - 2)
+            index = math.floor(val)
+            alpha = val - index
+
+            # Get index's row and the next one
+            # as dataframes
+            subrecord = deepcopy(item['meta'].iloc[[index]])
+            subrecord_next = item['meta'].iloc[[index + 1]]
+
+            # Interpolate
+            cols_to_interpolate = LABEL_COLS_ORDERED + ['eeg_label_offset_seconds', 'spectrogram_label_offset_seconds']
+            subrecord.loc[:, cols_to_interpolate] = (
+                (1 - alpha) * subrecord[cols_to_interpolate].values[0] + 
+                alpha * subrecord_next[cols_to_interpolate].values[0]
+            )
+            
+            # Squeeze to Series
+            subrecord = subrecord.squeeze()
+        else:
+            raise ValueError(f'unknown mode {self.mode}')
         
         # Select
         item = self._select_by_subrecord(subrecord, **item)
