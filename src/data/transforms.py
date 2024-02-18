@@ -130,7 +130,7 @@ class Subrecord:
     def _select_by_subrecord(self, subrecord, **item):
         # Extract sub EEG & spectrogram
         eeg = item['eeg']
-        eeg_start_index = subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ
+        eeg_start_index = int(subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ)
         eeg_stop_index = eeg_start_index + EED_N_SAMPLES
         eeg = eeg[eeg_start_index:eeg_stop_index]
 
@@ -138,7 +138,7 @@ class Subrecord:
         spectrogram_time = item['spectrogram_time']
         spectrogram_label_offset_seconds = subrecord['spectrogram_label_offset_seconds']
         spectrogram = spectrogram[spectrogram_time >= spectrogram_label_offset_seconds][:SPECTROGRAM_N_SAMPLES]
-        spectrogram_time = spectrogram_time[spectrogram_time >= spectrogram_label_offset_seconds]
+        spectrogram_time = spectrogram_time[spectrogram_time >= spectrogram_label_offset_seconds][:SPECTROGRAM_N_SAMPLES]
 
         # Put back to item
         item['eeg'] = eeg
