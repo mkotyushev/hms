@@ -1,46 +1,62 @@
-# lightning.pytorch==2.0.1
-seed_everything: true
+seed_everything: 28490463
 trainer:
-  accelerator: auto
-  strategy: auto
-  devices: auto
-  num_nodes: 1
-  precision: 32-true
-  logger: null
-  callbacks: null
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      project: hms
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: step
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        save_top_k: 1
+        monitor: val_loss_kld
+        every_n_epochs: 1
+        mode: min
+        save_on_train_epoch_end: false
+        save_last: true
+
+  # limit_train_batches: 10
+  # limit_val_batches: 10
+  max_epochs: 16
+  num_sanity_val_steps: 0
+  accumulate_grad_batches: 1
+  reload_dataloaders_every_n_epochs: 0
+  log_every_n_steps: 1
+  gradient_clip_val: null
+  check_val_every_n_epoch: 1
+  precision: bf16-mixed
+
+  gradient_clip_algorithm: norm
+  deterministic: true
+  benchmark: false
+  enable_checkpointing: true
+
   fast_dev_run: false
-  max_epochs: null
+  profiler: null
+  detect_anomaly: false
+  
   min_epochs: null
   max_steps: -1
   min_steps: null
   max_time: null
-  limit_train_batches: null
-  limit_val_batches: null
   limit_test_batches: null
   limit_predict_batches: null
   overfit_batches: 0.0
   val_check_interval: null
-  check_val_every_n_epoch: 1
-  num_sanity_val_steps: null
-  log_every_n_steps: null
-  enable_checkpointing: null
   enable_progress_bar: null
   enable_model_summary: null
-  accumulate_grad_batches: 1
-  gradient_clip_val: null
-  gradient_clip_algorithm: null
-  deterministic: null
-  benchmark: null
   inference_mode: true
   use_distributed_sampler: true
-  profiler: null
-  detect_anomaly: false
   barebones: false
   plugins: null
   sync_batchnorm: false
-  reload_dataloaders_every_n_epochs: 0
   default_root_dir: null
-ckpt_path: null
+  accelerator: auto
+  strategy: auto
+  devices: auto
+  num_nodes: 1
 model:
   class_path: src.model.modules.HmsModule
   init_args:
@@ -69,8 +85,6 @@ model:
     log_norm_verbose: false
     n_bootstrap: 0
     skip_nan: false
-    prog_bar_names: 
-      - f1
 data:
   class_path: src.data.datamodule.HmsDatamodule
   init_args:
