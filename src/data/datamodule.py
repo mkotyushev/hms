@@ -1,9 +1,10 @@
 import hashlib
 import git
 import logging
+import pandas as pd
 import yaml
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
@@ -15,6 +16,7 @@ from src.data.transforms import (
 )
 from src.utils.utils import (
     CacheDictWithSave,
+    hms_collate_fn,
 )
 
 
@@ -29,15 +31,16 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         n_splits: int = 5,
         cache_dir: Optional[Path] = None,
+        load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
-        batch_size_full: int = 32,
-        batch_size_full_apply_epoch: Optional[int] = None,
         num_workers: int = 0,
         pin_memory: bool = False,
         prefetch_factor: int = 2,
         persistent_workers: bool = False,
     ):
         super().__init__()
+        if load_kwargs is None:
+            load_kwargs = dict()
 
         self.save_hyperparameters()
 
@@ -113,7 +116,7 @@ class HmsDatamodule(LightningDataModule):
 
     def setup(self, stage: str = None) -> None:
         # Read metadata & prepare filepathes
-        df_meta = self.hparams.dataset_dirpath / 'train.csv'
+        df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
         parquet_filepathes = [
             self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
             for spectrogram_id in df_meta['spectrogram_id'].unique()
@@ -128,10 +131,10 @@ class HmsDatamodule(LightningDataModule):
         )
 
         # Split to train, val and test
-        kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=123541132)
+        kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
         train_indices, val_indices = list(
             kfold.split(
-                x=df_meta, 
+                X=df_meta, 
                 y=df_meta['expert_consensus'], 
                 groups=df_meta['patient_id']
             )
@@ -169,6 +172,7 @@ class HmsDatamodule(LightningDataModule):
             persistent_workers=self.hparams.persistent_workers,
             shuffle=True,
             drop_last=True,
+            collate_fn=hms_collate_fn,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -181,6 +185,7 @@ class HmsDatamodule(LightningDataModule):
             persistent_workers=self.hparams.persistent_workers,
             shuffle=False,
             drop_last=True,
+            collate_fn=hms_collate_fn,
         )
         
         return val_dataloader
@@ -193,7 +198,8 @@ class HmsDatamodule(LightningDataModule):
             pin_memory=self.hparams.pin_memory,
             prefetch_factor=self.hparams.prefetch_factor,
             persistent_workers=self.hparams.persistent_workers,
-            shuffle=False
+            shuffle=False,
+            collate_fn=hms_collate_fn,
         )
 
     def predict_dataloader(self) -> DataLoader:
