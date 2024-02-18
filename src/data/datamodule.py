@@ -1,6 +1,7 @@
 import hashlib
 import git
 import logging
+import numpy as np
 import pandas as pd
 import yaml
 from pathlib import Path
@@ -15,6 +16,7 @@ from src.data.transforms import (
     CenterSubrecord,
     ReshapeToPatches,
     Compose,
+    Normalize,
 )
 from src.utils.utils import (
     CacheDictWithSave,
@@ -54,16 +56,37 @@ class HmsDatamodule(LightningDataModule):
         self.val_transform = None
         self.test_transform = None
 
-    def build_transforms(self) -> None:   
+    def build_transforms(self) -> None: 
+        # TODO: calculate online
+        eeg_mean = np.array(
+            [ 
+                44.39012585,  48.05504616,  35.84733319, 735.07760231,
+                43.41243418,  47.65174304,  48.03432458,  45.02713978,
+                77.43586633,  54.38664398,  35.77550603,  58.72382854,
+                48.86899723,  45.18267964,  48.70544521,  37.56265024,
+                45.57611347,  49.78682943,  51.23579693,  48.1905391 
+            ]
+        ).astype(np.float32)
+        eeg_std = np.array(
+            [ 
+                1255.08261084,  1276.34525319,  1064.04793034, 27388.61814863,
+                1269.77409542,  1273.52446548,  1284.64702867,  1247.36842141,
+                1542.7484345 ,  1316.68817955,  1068.82017393,  1413.8112121 ,
+                1404.78359355,  1284.41825224,  1269.64520876,  1070.41372423,
+                1253.74257573,  1317.05794758,  1301.32755101,  1313.08920088
+            ]
+        ).astype(np.float32)
         self.train_transform = Compose(
             [
                 RandomSubrecord(),
+                Normalize(eeg_mean=eeg_mean, eeg_std=eeg_std),
                 ReshapeToPatches(),
             ]
         )
         self.val_transform = self.test_transform = Compose(
             [
                 CenterSubrecord(),
+                Normalize(eeg_mean=eeg_mean, eeg_std=eeg_std),
                 ReshapeToPatches(),
             ]
         )

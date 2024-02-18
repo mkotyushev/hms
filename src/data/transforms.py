@@ -201,3 +201,23 @@ class Compose:
         for transform in self.transforms:
             item = transform(**item)
         return item
+
+
+class Normalize:
+    def __init__(self, eeg_mean, eeg_std):
+        self.eeg_mean = eeg_mean
+        self.eeg_std = eeg_std
+
+    def __call__(self, **item):
+        # s: (T=10000, F=20)
+        spectrogram = item['spectrogram']
+        spectrogram = np.log10(spectrogram + 1)
+
+        # e: (T=300, F=400)
+        eeg = item['eeg']
+        eeg = (eeg - self.eeg_mean) / self.eeg_std
+        
+        item['spectrogram'] = spectrogram
+        item['eeg'] = eeg
+        
+        return item
