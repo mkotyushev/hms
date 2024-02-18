@@ -10,7 +10,7 @@ from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
 
-from .constants import LABEL_COLS_ORDERED, EEG_GAUSSIANIZE_COEFS_TRAIN
+from .constants import EEG_GAUSSIANIZE_COEFS_TRAIN
 from src.data.dataset import HmsDataset
 from src.data.transforms import (
     RandomSubrecord,
