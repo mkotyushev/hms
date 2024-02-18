@@ -263,7 +263,8 @@ class Normalize:
         elif self.spectrogram_strategy == 'log':
             spectrogram = np.log10(spectrogram + 1)
         else:
-            raise ValueError(f'unknown strategy for spectrogram {self.spectrogram_strategy}')
+            assert self.spectrogram_strategy is None, \
+                f'unknown strategy for spectrogram {self.spectrogram_strategy}'
 
         # e: (T=300, F=400)
         eeg = item['eeg']
@@ -273,7 +274,8 @@ class Normalize:
             abs_, sign = np.abs(eeg), np.sign(eeg)
             eeg = np.log10(abs_ + 1) * sign
         else:
-            raise ValueError(f'unknown strategy for EEG {self.eeg_strategy}')
+            assert self.eeg_strategy is None, \
+                f'unknown strategy for EEG {self.eeg_strategy}'
         
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg
