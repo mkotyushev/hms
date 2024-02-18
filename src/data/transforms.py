@@ -126,11 +126,8 @@ class CutMix:
 ###################################################################
 ##################### HMS #########################################
 ###################################################################
-class RandomSubrecord:
-    def __call__(self, **item):
-        # Sample single sub-record
-        subrecord = item['meta'].sample()
-        
+class Subrecord:
+    def _select_by_subrecord(self, subrecord, **item):
         # Extract sub EEG & spectrogram
         eeg = item['eeg']
         eeg_start_index = subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ
@@ -149,5 +146,27 @@ class RandomSubrecord:
         item['spectrogram_time'] = spectrogram_time
         item['label'] = subrecord[LABEL_COLS_ORDERED].values
         item['meta'] = subrecord
+
+        return item
+
+
+class RandomSubrecord(Subrecord):
+    def __call__(self, **item):
+        # Sample single sub-record
+        subrecord = item['meta'].sample()
+        
+        # Select
+        item = self._select_by_subrecord(subrecord, **item)
+
+        return item
+
+
+class CenterSubrecord(Subrecord):
+    def __call__(self, **item):
+        # Get center sub-record
+        subrecord = item['meta'].iloc[len(item['meta'].index) // 2]
+        
+        # Select
+        item = self._select_by_subrecord(subrecord, **item)
 
         return item
