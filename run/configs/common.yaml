@@ -60,10 +60,10 @@ trainer:
 model:
   class_path: src.model.modules.HmsModule
   init_args:
-    embed_dim: 768
-    num_heads: 8
+    embed_dim: 128
+    num_heads: 4
     dropout: 0.1
-    depth: 8
+    depth: 2
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:
@@ -96,7 +96,7 @@ data:
     split_index: 0
     n_splits: 5
     cache_dir: .cache
-    batch_size: 16
+    batch_size: 32
     num_workers: 8
     pin_memory: False
     prefetch_factor: 2
