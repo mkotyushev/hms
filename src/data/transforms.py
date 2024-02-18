@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from typing import Dict
+from typing import Dict, List, Callable
 
 from .constants import (
     SPECTROGRAM_N_SAMPLES, 
@@ -169,4 +169,35 @@ class CenterSubrecord(Subrecord):
         # Select
         item = self._select_by_subrecord(subrecord, **item)
 
+        return item
+
+
+class ReshapeToPatches:
+    def __call__(self, **item):
+        # s: (T=300, F=400) -> (K=4, T=300, F=100)
+        spectrogram = item['spectrogram']
+        T, F = spectrogram.shape
+        assert F == 400
+        spectrogram = spectrogram.reshape(T, 4, F // 4).transpose((1, 0, 2))
+
+        # e: (T=10000, F=20) -> (T=50, K=200, F=20)
+        eeg = item['eeg']
+        T, F = eeg.shape
+        assert T % 200 == 0
+        T_new = T // 200
+        eeg = eeg.reshape(T_new, 200, F)
+
+        item['spectrogram'] = spectrogram
+        item['eeg'] = eeg
+
+        return item
+
+
+class Compose:
+    def __init__(self, transforms: List[Callable]):
+        self.transforms = transforms
+
+    def __call__(self, **item):
+        for transform in self.transforms:
+            item = transform(**item)
         return item

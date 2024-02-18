@@ -13,6 +13,8 @@ from src.data.dataset import HmsDataset
 from src.data.transforms import (
     RandomSubrecord,
     CenterSubrecord,
+    ReshapeToPatches,
+    Compose,
 )
 from src.utils.utils import (
     CacheDictWithSave,
@@ -53,8 +55,18 @@ class HmsDatamodule(LightningDataModule):
         self.test_transform = None
 
     def build_transforms(self) -> None:   
-        self.train_transform = RandomSubrecord()
-        self.val_transform = self.test_transform = CenterSubrecord()
+        self.train_transform = Compose(
+            [
+                RandomSubrecord(),
+                ReshapeToPatches(),
+            ]
+        )
+        self.val_transform = self.test_transform = Compose(
+            [
+                CenterSubrecord(),
+                ReshapeToPatches(),
+            ]
+        )
 
     def make_cache(self, parquet_filepathes) -> None:
         cache_save_path = None
