@@ -97,7 +97,8 @@ data:
     split_index: 0
     n_splits: 5
     random_subrecord_mode: discrete
-    gaussianize_mode: null
+    load_kwargs:
+      gaussianize_mode: null
     eeg_norm_strategy: meanstd
     spectrogram_norm_strategy: log
     cache_dir: .cache

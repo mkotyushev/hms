@@ -41,7 +41,6 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
-        gaussianize_mode: Literal['pre', 'online', None] = None,
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
@@ -71,21 +70,30 @@ class HmsDatamodule(LightningDataModule):
 
     def build_gaussianize(self, df_meta):
         # Gaussianize EEG
+        if (
+            'gaussianize_mode' not in self.hparams.load_kwargs or 
+            self.hparams.load_kwargs['gaussianize_mode'] is None
+        ):
+            return None
+        
         gaussianize = None
-        if self.hparams.gaussianize_mode == 'online':
+        if self.hparams.load_kwargs['gaussianize_mode'] == 'online':
             # Build coeffs from a given dataset
             gaussianize = build_gaussianize(
                 df_meta, 
                 n_samples=10,
                 random_state=123125
             )
-        elif self.hparams.gaussianize_mode == 'pre':
+        elif self.hparams.load_kwargs['gaussianize_mode'] == 'pre':
             # Note: there is a small dataleak
             # because coefs are fitted on a whole train data
             gaussianize = Gaussianize()
             gaussianize.coefs_ = EEG_GAUSSIANIZE_COEFS_TRAIN
         else:
-            assert self.hparams.gaussianize_mode is None
+            raise ValueError(
+                f'unknown gaussianize_mode '
+                f'{self.hparams.load_kwargs["gaussianize_mode"]}'
+            )
         return gaussianize
 
     def build_train_stats(self):
