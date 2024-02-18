@@ -21,6 +21,7 @@ from src.data.transforms import (
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
+    build_stats,
 )
 
 
@@ -56,26 +57,19 @@ class HmsDatamodule(LightningDataModule):
         self.val_transform = None
         self.test_transform = None
 
-    def build_transforms(self) -> None: 
-        # TODO: calculate online
-        eeg_mean = np.array(
-            [ 
-                44.39012585,  48.05504616,  35.84733319, 735.07760231,
-                43.41243418,  47.65174304,  48.03432458,  45.02713978,
-                77.43586633,  54.38664398,  35.77550603,  58.72382854,
-                48.86899723,  45.18267964,  48.70544521,  37.56265024,
-                45.57611347,  49.78682943,  51.23579693,  48.1905391 
-            ]
-        ).astype(np.float32)
-        eeg_std = np.array(
-            [ 
-                1255.08261084,  1276.34525319,  1064.04793034, 27388.61814863,
-                1269.77409542,  1273.52446548,  1284.64702867,  1247.36842141,
-                1542.7484345 ,  1316.68817955,  1068.82017393,  1413.8112121 ,
-                1404.78359355,  1284.41825224,  1269.64520876,  1070.41372423,
-                1253.74257573,  1317.05794758,  1301.32755101,  1313.08920088
-            ]
-        ).astype(np.float32)
+    def build_transforms(self) -> None:
+        # Calculate stats
+        eeg_mean, eeg_std, *_ = build_stats(
+            self.train_dataset, 
+            filepathes=[
+                self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
+                for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
+            ],
+            type_='eeg'
+        )
+        eeg_mean = eeg_mean.astype(np.float32)
+        eeg_std = eeg_std.astype(np.float32)
+
         self.train_transform = Compose(
             [
                 RandomSubrecord(),
@@ -160,7 +154,6 @@ class HmsDatamodule(LightningDataModule):
             for eeg_id in df_meta['eeg_id'].unique()
         ]
 
-        self.build_transforms()
         self.make_cache(
             parquet_filepathes=parquet_filepathes,
         )
@@ -181,9 +174,11 @@ class HmsDatamodule(LightningDataModule):
                 df_meta_train,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
-                transform=self.train_transform,
+                transform=None,  # Here transform depend on the dataset, so will be set later
                 cache=self.cache,
             )
+            self.build_transforms()
+            self.train_dataset.transform = self.train_transform
 
         if self.val_dataset is None:
             self.val_dataset = HmsDataset(
@@ -193,6 +188,7 @@ class HmsDatamodule(LightningDataModule):
                 transform=self.val_transform,
                 cache=self.cache,
             )
+        
         
         # TODO: add test dataset
         self.test_dataset = None
