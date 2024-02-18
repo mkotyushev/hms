@@ -3,10 +3,12 @@ import torch
 from lightning import LightningModule
 from typing import Any, Dict, Optional, Union
 from torch import Tensor
+import torch.nn.functional as F
 from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
 
+from .hms_classifier import HmsClassifier
 from src.utils.utils import state_norm
 from src.utils.mechanic import mechanize
 
@@ -374,3 +376,29 @@ class BaseModule(LightningModule):
         else:
             if 'state_2.0_norm_total' in norms:
                 self.log('state_2.0_norm_total', norms['state_2.0_norm_total'])
+
+
+class HmsModule(BaseModule):
+    def __init__(
+        self,
+        **base_kwargs,
+    ):
+        super().__init__(**base_kwargs)
+        self.model = HmsClassifier(
+            n_classes=6,
+            input_dim_s=100,
+            num_patches_s=1200,
+            input_dim_e=200,
+            num_patches_e=1000,
+            embed_dim=128,
+            num_heads=4,
+            dropout=0.1,
+            depth=2,
+        )
+        
+    def compute_loss_preds(self, batch, *args, **kwargs):
+        preds = self.model(batch['spectrogram'], batch['eeg'])
+        losses = {
+            'kld': F.kl_div(preds, batch['label'])
+        }
+        return sum(losses.values()), losses, preds
