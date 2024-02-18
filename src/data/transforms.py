@@ -1,3 +1,15 @@
+import numpy as np
+import random
+from typing import Dict
+
+from .constants import (
+    SPECTROGRAM_N_SAMPLES, 
+    EED_N_SAMPLES, 
+    EED_SAMPLING_RATE_HZ, 
+    LABEL_COLS_ORDERED,
+)
+
+
 ###################################################################
 ##################### CV ##########################################
 ###################################################################
@@ -109,3 +121,33 @@ class CutMix:
             kwargs['masks'][i][h_start:h_end, w_start:w_end] = kwargs['masks1'][i][h_start:h_end, w_start:w_end]
         
         return kwargs
+
+
+###################################################################
+##################### HMS #########################################
+###################################################################
+class RandomSubrecord:
+    def __call__(self, **item):
+        # Sample single sub-record
+        subrecord = item['meta'].sample()
+        
+        # Extract sub EEG & spectrogram
+        eeg = item['eeg']
+        eeg_start_index = subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ
+        eeg_stop_index = eeg_start_index + EED_N_SAMPLES
+        eeg = eeg[eeg_start_index:eeg_stop_index]
+
+        spectrogram = item['spectrogram']
+        spectrogram_time = item['spectrogram_time']
+        spectrogram_label_offset_seconds = subrecord['spectrogram_label_offset_seconds']
+        spectrogram = spectrogram[spectrogram_time >= spectrogram_label_offset_seconds][:SPECTROGRAM_N_SAMPLES]
+        spectrogram_time = spectrogram_time[spectrogram_time >= spectrogram_label_offset_seconds]
+
+        # Put back to item
+        item['eeg'] = eeg
+        item['spectrogram'] = spectrogram
+        item['spectrogram_time'] = spectrogram_time
+        item['label'] = subrecord[LABEL_COLS_ORDERED].values
+        item['meta'] = subrecord
+
+        return item
