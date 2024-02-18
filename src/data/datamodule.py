@@ -18,7 +18,6 @@ from src.data.transforms import (
     ReshapeToPatches,
     Compose,
     Normalize,
-    FillNan,
     GaussianizeEegPretransform,
 )
 from src.utils.utils import (
@@ -135,7 +134,6 @@ class HmsDatamodule(LightningDataModule):
         self.train_transform = Compose(
             [
                 RandomSubrecord(mode=self.hparams.random_subrecord_mode),
-                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(
                     eeg_mean=eeg_mean, 
                     eeg_std=eeg_std,
@@ -150,7 +148,6 @@ class HmsDatamodule(LightningDataModule):
         self.val_transform = self.test_transform = Compose(
             [
                 CenterSubrecord(),
-                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(
                     eeg_mean=eeg_mean, 
                     eeg_std=eeg_std,

@@ -103,8 +103,20 @@ class HmsEncoderLayer(nn.Module):
         return x
 
 
-def embed(x, patch_embed, pos_embed, cls_token):
+def embed(x, patch_embed, pos_embed, cls_token, nan_token):
     B, N, _ = x.shape
+
+    # Flatten to B * N to ease masking
+    x = x.reshape(B * N, -1)
+
+    # Fill nans
+    # Note: here nan token is introduced before patch embed
+    # to avoid messing with NaNs when applying linear layer
+    mask = x.isnan().any(1)
+    x[mask] = nan_token.expand(mask.sum(), -1)
+
+    # Reshape back
+    x = x.reshape(B, N, -1)
 
     # Patch embed
     x = patch_embed(x)
@@ -142,9 +154,11 @@ class HmsClassifier(nn.Module):
         # Pos embedding
         self.pos_embed_s = nn.Parameter(torch.randn(1, num_patches_s + 1, embed_dim))
         self.cls_token_s = nn.Parameter(torch.randn(1, 1, embed_dim))
+        self.nan_token_s = nn.Parameter(torch.randn(input_dim_s))
 
         self.pos_embed_e = nn.Parameter(torch.randn(1, num_patches_e + 1, embed_dim))
         self.cls_token_e = nn.Parameter(torch.randn(1, 1, embed_dim))
+        self.nan_token_e = nn.Parameter(torch.randn(input_dim_e))
 
         # Common
         self.dropout = nn.Dropout(dropout)
@@ -174,9 +188,9 @@ class HmsClassifier(nn.Module):
         x_e = x_e.reshape(B, -1, E)
 
         # Patch embed & pos embed
-        x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s)
+        x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s, self.nan_token_s)
         x_s = self.dropout(x_s)
-        x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e)
+        x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e, self.nan_token_e)
         x_e = self.dropout(x_e)
 
         # Encode
