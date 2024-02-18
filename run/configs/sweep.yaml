@@ -15,7 +15,6 @@ parameters:
     - 16
     - 32
     - 64
-    - 128
   model.init_args.embed_dim:
     distribution: categorical
     values:
@@ -23,7 +22,6 @@ parameters:
     - 64
     - 128
     - 256
-    - 512
   model.init_args.num_heads:
     distribution: categorical
     values:
@@ -32,7 +30,6 @@ parameters:
     - 4
     - 8
     - 16
-    - 32
   model.init_args.depth:
     distribution: categorical
     values:
