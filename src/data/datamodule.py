@@ -17,6 +17,7 @@ from src.data.transforms import (
     ReshapeToPatches,
     Compose,
     Normalize,
+    FillNan,
 )
 from src.utils.utils import (
     CacheDictWithSave,
@@ -70,9 +71,20 @@ class HmsDatamodule(LightningDataModule):
         eeg_mean = eeg_mean.astype(np.float32)
         eeg_std = eeg_std.astype(np.float32)
 
+        spectrogram_mean, *_ = build_stats(
+            self.train_dataset, 
+            filepathes=[
+                self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
+                for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
+            ],
+            type_='spectrogram'
+        )
+        spectrogram_mean = spectrogram_mean.astype(np.float32)
+
         self.train_transform = Compose(
             [
                 RandomSubrecord(),
+                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(eeg_mean=eeg_mean, eeg_std=eeg_std),
                 ReshapeToPatches(),
             ]
@@ -80,6 +92,7 @@ class HmsDatamodule(LightningDataModule):
         self.val_transform = self.test_transform = Compose(
             [
                 CenterSubrecord(),
+                FillNan(eeg_fill=eeg_mean, spectrogram_fill=spectrogram_mean),
                 Normalize(eeg_mean=eeg_mean, eeg_std=eeg_std),
                 ReshapeToPatches(),
             ]

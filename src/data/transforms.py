@@ -227,3 +227,21 @@ class Normalize:
         item['eeg'] = eeg
         
         return item
+
+
+class FillNan:
+    def __init__(self, eeg_fill, spectrogram_fill):
+        self.eeg_fill = eeg_fill
+        self.spectrogram_fill = spectrogram_fill
+
+    def __call__(self, **item):
+        spectrogram = item['spectrogram']
+        spectrogram[spectrogram.isnan().any(1)] = self.spectrogram_fill
+
+        eeg = item['eeg']
+        eeg[eeg.isnan().any(1)] = self.eeg_fill
+
+        item['spectrogram'] = spectrogram
+        item['eeg'] = eeg
+        
+        return item

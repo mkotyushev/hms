@@ -91,22 +91,11 @@ class HmsEncoderLayer(nn.Module):
         return x
 
 
-def embed(x, patch_embed, pos_embed, cls_token, unk_token):
+def embed(x, patch_embed, pos_embed, cls_token):
     B, N, _ = x.shape
 
     # Patch embed
     x = patch_embed(x)
-
-    # Set patches with nan to unk token
-    nan_mask = x.isnan().any(-1)
-    n_nans = nan_mask.sum()
-    nan_mask = nan_mask[..., None].expand(x.size())
-    unk_token = unk_token.expand(n_nans, -1).reshape(-1)
-    # TODO: check why explicit bfloat16 conversion is required 
-    # for bfloat16 training
-    if x.dtype == torch.bfloat16:
-        unk_token = unk_token.bfloat16()
-    x[nan_mask] = unk_token
 
     # Cat cls token
     cls_token = repeat(cls_token, '() n d -> b n d', b = B)
@@ -141,11 +130,9 @@ class HmsClassifier(nn.Module):
         # Pos embedding
         self.pos_embed_s = nn.Parameter(torch.randn(1, num_patches_s + 1, embed_dim))
         self.cls_token_s = nn.Parameter(torch.randn(1, 1, embed_dim))
-        self.unk_token_s = nn.Parameter(torch.randn(embed_dim))
 
         self.pos_embed_e = nn.Parameter(torch.randn(1, num_patches_e + 1, embed_dim))
         self.cls_token_e = nn.Parameter(torch.randn(1, 1, embed_dim))
-        self.unk_token_e = nn.Parameter(torch.randn(embed_dim))
 
         # Common
         self.dropout = nn.Dropout(dropout)
@@ -175,9 +162,9 @@ class HmsClassifier(nn.Module):
         x_e = x_e.reshape(B, -1, E)
 
         # Patch embed & pos embed
-        x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s, self.unk_token_s)
+        x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s)
         x_s = self.dropout(x_s)
-        x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e, self.unk_token_e)
+        x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e)
         x_e = self.dropout(x_e)
 
         # Encode
