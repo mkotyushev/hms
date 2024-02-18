@@ -36,7 +36,7 @@ class HmsDatamodule(LightningDataModule):
         dataset_dirpath: Path,	
         split_index: int,
         n_splits: int = 5,
-        eeg_norm_strategy: Literal['meanstd'] = 'meanstd',
+        eeg_norm_strategy: Literal['meanstd', 'log'] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,

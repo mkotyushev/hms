@@ -240,6 +240,9 @@ class Normalize:
         eeg = item['eeg']
         if self.eeg_strategy == 'meanstd':
             eeg = (eeg - self.eeg_mean) / self.eeg_std
+        elif self.spectrogram_strategy == 'log':
+            abs_, sign = np.abs(eeg), np.sign(eeg)
+            eeg = np.log10(abs_ + 1) * sign
         else:
             raise ValueError(f'unknown strategy for EEG {self.eeg_strategy}')
         
