@@ -10,16 +10,18 @@ This code written by Greg Ver Steeg, 2015.
 from typing import Text, List, Union
 
 import numpy as np
+import logging
+from tqdm.auto import tqdm
 from scipy import special
 from scipy.stats import kurtosis, norm, rankdata, boxcox
 from scipy import optimize  # TODO: Explore efficacy of other opt. methods
 import sklearn
 from matplotlib import pylab as plt
 from scipy import stats
-import warnings
 import os
 
 
+logger = logging.getLogger(__name__)
 # Tolerance for == 0.0 tolerance.
 _EPS = 1e-6
 
@@ -79,7 +81,7 @@ class Gaussianize(sklearn.base.TransformerMixin):
         self.coefs_ = []  # Store tau for each transformed variable
         self.verbose = verbose
         
-    def fit(self, x: np.ndarray, y=None):
+    def fit(self, x: np.ndarray, y=None, names=None):
         """Fit a Gaussianizing transformation to each variable/column in x."""
         # Initialize coefficients again with an empty list.  Otherwise
         # calling .fit() repeatedly will augment previous .coefs_ list.
@@ -97,7 +99,11 @@ class Gaussianize(sklearn.base.TransformerMixin):
         else:
             raise NotImplementedError("stategy='%s' not implemented." % self.strategy)
 
-        for x_i in x.T:
+        if names is None:
+            names = range(x.shape[1])
+
+        for x_i, name in tqdm(zip(x.T, names)):
+            logging.info(f'Started {self.strategy} process for {name}')
             self.coefs_.append(_get_coef(x_i))
 
         return self
@@ -172,11 +178,17 @@ def igmm(y: np.ndarray, tol: float = 1e-6, max_iter: int = 100):
         mu1, sigma1 = np.mean(x), np.std(x)
         tau1 = (mu1, sigma1, delta1)
 
-        if np.linalg.norm(np.array(tau1) - np.array(tau0)) < tol:
+        cur_err = np.linalg.norm(np.array(tau1) - np.array(tau0))
+        logger.debug(f'Current error {cur_err}')
+        if cur_err < tol:
+            logger.info(f'Converged for {k} iterations')
             break
         else:
             if k == max_iter - 1:
-                warnings.warn("Warning: No convergence after %d iterations. Increase max_iter." % max_iter)
+                logger.warning(
+                    f"Warning: No convergence after {max_iter} iterations "
+                    f"with current error {cur_err}. Increase max_iter."
+                )
     return tau1
 
 
@@ -252,7 +264,7 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
     if not len(args) == 1:
-        warnings.warn("Run with '-h' option for usage help.")
+        logger.warning("Run with '-h' option for usage help.")
         sys.exit()
 
     #Load data from csv file
