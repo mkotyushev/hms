@@ -1,4 +1,5 @@
 import pandas as pd
+from tqdm.auto import tqdm
 from pathlib import Path
 from typing import Callable, Dict
 
@@ -24,6 +25,8 @@ class HmsDataset:
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
         self.cache = cache
+        if self.cache is not None:
+            self.populate_cache()
 
     def __len__(self) -> int:
         return len(self.index_to_eeg_id)
@@ -61,3 +64,14 @@ class HmsDataset:
                 item = pd.read_parquet(path)
                 self.cache[path] = item
         return item
+
+    def populate_cache(self):
+        filepathes=[
+            self.eeg_dirpath / f'{eeg_id}.parquet'
+            for eeg_id in self.df_meta['eeg_id'].unique()
+        ] + [
+            self.spectrogram_dirpath / f'{spectrogram_id}.parquet'
+            for spectrogram_id in self.df_meta['spectrogram_id'].unique()
+        ]
+        for filepath in tqdm(filepathes, desc=f'Polulating cache, len is {len(filepathes)}'):
+            _ = self.read_parquet(filepath)
