@@ -355,12 +355,10 @@ def hms_collate_fn(batch):
         if isinstance(v[0], pd.Series):
             output[k] = pd.DataFrame(v)
         elif isinstance(v[0], np.ndarray):
-            v = np.stack(v)
-            if k == 'label':
-                v = v.astype(float)
+            v = np.stack(v).astype(np.float32)
             v = default_collate(v)
             output[k] = v
         else:
-            output[k] = default_collate(v)
+            output[k] = default_collate(v.astype(np.float32))
     
     return output

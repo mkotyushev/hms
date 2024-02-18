@@ -98,8 +98,6 @@ class HmsDatamodule(LightningDataModule):
             ],
             type_='eeg',
         )
-        eeg_mean = eeg_mean.astype(np.float32)
-        eeg_std = eeg_std.astype(np.float32)
 
         # Spectogram stats
         spectrogram_mean, spectrogram_std, *_ = build_stats(
@@ -110,8 +108,6 @@ class HmsDatamodule(LightningDataModule):
             ],
             type_='spectrogram',
         )
-        spectrogram_mean = spectrogram_mean.astype(np.float32)
-        spectrogram_std = spectrogram_std.astype(np.float32)
 
         return eeg_mean, eeg_std, spectrogram_mean, spectrogram_std
 
@@ -209,7 +205,6 @@ class HmsDatamodule(LightningDataModule):
 
     def read_meta(self):
         df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
-        df_meta[LABEL_COLS_ORDERED] = df_meta[LABEL_COLS_ORDERED].astype(float)
         return df_meta
 
     def setup(self, stage: str = None) -> None:
