@@ -325,13 +325,14 @@ def hms_collate_fn(batch):
             output[k].append(v)
     
     for k, v in output.items():
-        if isinstance(v[0], str) or (hasattr(v[0], 'dtype') and v[0].dtype == object):
-            output[k] = v
-        elif isinstance(v[0], pd.Series):
+        if isinstance(v[0], pd.Series):
             output[k] = pd.DataFrame(v)
         elif isinstance(v[0], np.ndarray):
             v = np.stack(v)
-            output[k] = default_collate(v)
+            if k == 'label':
+                v = v.astype(int)
+            v = default_collate(v)
+            output[k] = v
         else:
             output[k] = default_collate(v)
     
