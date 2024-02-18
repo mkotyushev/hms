@@ -36,11 +36,12 @@ class HmsEncoderLayer(nn.Module):
             dropout,
             batch_first=True,
         )
+        self.cross_in_s = nn.Linear(embed_dim, embed_dim)
+        self.cross_out_s = nn.Linear(embed_dim, embed_dim)
         self.mlp_s = Mlp(embed_dim, embed_dim, embed_dim, dropout)
 
         self.norm_s_1 = nn.LayerNorm(embed_dim)
         self.norm_s_2 = nn.LayerNorm(embed_dim)
-        self.norm_s_3 = nn.LayerNorm(embed_dim)
 
         # E
         self.self_attn_e = nn.MultiheadAttention(
@@ -55,11 +56,12 @@ class HmsEncoderLayer(nn.Module):
             dropout,
             batch_first=True,
         )
+        self.cross_in_e = nn.Linear(embed_dim, embed_dim)
+        self.cross_out_e = nn.Linear(embed_dim, embed_dim)
         self.mlp_e = Mlp(embed_dim, embed_dim, embed_dim, dropout)
 
         self.norm_e_1 = nn.LayerNorm(embed_dim)
         self.norm_e_2 = nn.LayerNorm(embed_dim)
-        self.norm_e_3 = nn.LayerNorm(embed_dim)
 
         # Common
         self.dropout = nn.Dropout(dropout)
@@ -75,16 +77,26 @@ class HmsEncoderLayer(nn.Module):
 
         # Cross
         if self.cheap_cross:
-            x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e[:, 0][:, None, :], x_e[:, 0][:, None, :], need_weights=False)[0]))
-            x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s[:, 0][:, None, :], x_s[:, 0][:, None, :], need_weights=False)[0]))
+            class_token_s, x_s = x_s[:, 0:1, :], x_s[:, 1:, :]
+            class_token_e, x_e = x_e[:, 0:1, :], x_e[:, 1:, :]
+
+            class_token_s = self.cross_in_s(class_token_s)
+            class_token_s = class_token_s + self.cross_attn_s(class_token_s, x_e, x_e, need_weights=False)[0]
+            class_token_s = self.cross_out_s(class_token_s)
+            x_s_after_cross = torch.cat([class_token_s, x_s], dim=1)
+            
+            class_token_e = self.cross_in_e(class_token_e)
+            class_token_e = class_token_e + self.cross_attn_e(class_token_e, x_s, x_s, need_weights=False)[0]
+            class_token_e = self.cross_out_e(class_token_e)
+            x_e_after_cross = torch.cat([class_token_e, x_e], dim=1)
         else:
             x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e, x_e, need_weights=False)[0]))
             x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s, x_s, need_weights=False)[0]))
         x_s, x_e = x_s_after_cross, x_e_after_cross
 
         # Mlp
-        x_s = self.norm_s_3(x_s + self.mlp_s(x_s))
-        x_e = self.norm_e_3(x_e + self.mlp_e(x_e))
+        x_s = self.norm_s_2(x_s + self.mlp_s(x_s))
+        x_e = self.norm_e_2(x_e + self.mlp_e(x_e))
 
         x = x_s, x_e
 
