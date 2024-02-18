@@ -98,24 +98,28 @@ class HmsDatamodule(LightningDataModule):
 
     def build_train_stats(self):
         # EEG stats
-        eeg_mean, eeg_std, *_ = build_stats(
-            self.train_dataset, 
-            filepathes=[
-                self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
-                for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
-            ],
-            type_='eeg',
-        )
+        eeg_mean, eeg_std = None, None
+        if self.hparams.eeg_norm_strategy == 'meanstd':
+            eeg_mean, eeg_std, *_ = build_stats(
+                self.train_dataset, 
+                filepathes=[
+                    self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
+                    for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
+                ],
+                type_='eeg',
+            )
 
         # Spectogram stats
-        spectrogram_mean, spectrogram_std, *_ = build_stats(
-            self.train_dataset, 
-            filepathes=[
-                self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
-                for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
-            ],
-            type_='spectrogram',
-        )
+        spectrogram_mean, spectrogram_std = None, None
+        if self.hparams.spectrogram_norm_strategy == 'meanstd':
+            spectrogram_mean, spectrogram_std, *_ = build_stats(
+                self.train_dataset, 
+                filepathes=[
+                    self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
+                    for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
+                ],
+                type_='spectrogram',
+            )
 
         return eeg_mean, eeg_std, spectrogram_mean, spectrogram_std
 
