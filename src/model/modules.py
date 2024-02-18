@@ -285,25 +285,37 @@ class BaseModule(LightningModule):
             else:
                 return lr * (self.hparams.lr_layer_decay ** layer_index)
 
+
     def build_parameter_groups(self):
         """Get parameter groups for optimizer."""
         names, params = list(zip(*self.named_parameters()))
         num_layers = len(params)
-        grouped_parameters = [
-            {
-                'params': param, 
-                'lr': self.get_lr_decayed(
-                    self.hparams.optimizer_init['init_args']['lr'], 
-                    num_layers - layer_index - 1,
-                    name
-                )
-            } for layer_index, (name, param) in enumerate(self.named_parameters())
-        ]
+        
+        if self.hparams.lr_layer_decay == 1.0:
+            grouped_parameters = [
+                {
+                    'params': params, 
+                    'lr': self.hparams.optimizer_init['init_args']['lr']
+                }
+            ]
+        else:
+            grouped_parameters = [
+                {
+                    'params': param, 
+                    'lr': self.get_lr_decayed(
+                        self.hparams.optimizer_init['init_args']['lr'], 
+                        num_layers - layer_index - 1,
+                        name
+                    )
+                } for layer_index, (name, param) in enumerate(self.named_parameters())
+            ]
+        
         logger.info(
             f'Number of layers: {num_layers}, '
             f'min lr: {names[0]}, {grouped_parameters[0]["lr"]}, '
             f'max lr: {names[-1]}, {grouped_parameters[-1]["lr"]}'
         )
+
         return grouped_parameters
 
     def configure_optimizer(self):
