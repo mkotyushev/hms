@@ -97,7 +97,12 @@ def embed(x, patch_embed, pos_embed, cls_token, unk_token):
     nan_mask = x.isnan().any(-1)
     n_nans = nan_mask.sum()
     nan_mask = nan_mask[..., None].expand(x.size())
-    x[nan_mask] = unk_token.expand(n_nans, -1).reshape(-1)
+    unk_token = unk_token.expand(n_nans, -1).reshape(-1)
+    # TODO: check why explicit bfloat16 conversion is required 
+    # for bfloat16 training
+    if x.dtype == torch.bfloat16:
+        unk_token = unk_token.bfloat16()
+    x[nan_mask] = unk_token
 
     # Cat cls token
     cls_token = repeat(cls_token, '() n d -> b n d', b = B)
