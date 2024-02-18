@@ -78,7 +78,7 @@ class BaseModule(LightningModule):
         """Extract preds and targets from batch.
         Could be overriden for custom batch / prediction structure.
         """
-        y, y_pred = batch[1].detach(), preds[:, 1].detach().float()
+        y, y_pred = batch['label'].detach(), preds[:, 1].detach().float()
         y, y_pred = self.remove_nans(y, y_pred)
         y_pred = torch.softmax(y_pred, dim=1)
         return y, y_pred
@@ -169,7 +169,7 @@ class BaseModule(LightningModule):
                 on_epoch=True,
                 prog_bar=True,
                 add_dataloader_idx=False,
-                batch_size=batch[0].shape[0],
+                batch_size=batch['eeg'].shape[0],
             )
         self.update_metrics('val_metrics', preds, batch)
         return total_loss
@@ -398,7 +398,13 @@ class HmsModule(BaseModule):
         
     def compute_loss_preds(self, batch, *args, **kwargs):
         preds = self.model(batch['spectrogram'], batch['eeg'])
+        target = batch['label'] / batch['label'].sum(1)[:, None]
+        log_preds = F.log_softmax(preds, dim=1)
         losses = {
-            'kld': F.kl_div(preds, batch['label'])
+            'kld': F.kl_div(
+                log_preds, 
+                target,
+                log_target=False,
+            )
         }
-        return sum(losses.values()), losses, preds
+        return sum(losses.values()), losses, log_preds
