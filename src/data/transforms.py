@@ -288,7 +288,7 @@ class GaussianizeEegPretransform:
     def __call__(self, df):
         if self.gaussianize is None or 'EKG' not in df.columns:
             return df
-        df[EEG_COLS_ORDERED] = self.gaussianize.transform(df[EEG_COLS_ORDERED].values)
+        df[EEG_COLS_ORDERED] = self.gaussianize.transform(df[EEG_COLS_ORDERED].values).astype(np.float32)
         return df
 
 
