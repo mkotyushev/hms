@@ -10,7 +10,7 @@ from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
 
-from .constants import LABEL_COLS_ORDERED
+from .constants import LABEL_COLS_ORDERED, EEG_GAUSSIANIZE_COEFS_TRAIN
 from src.data.dataset import HmsDataset
 from src.data.transforms import (
     RandomSubrecord,
@@ -26,6 +26,7 @@ from src.utils.utils import (
     build_stats,
     build_gaussianize,
 )
+from src.utils.gaussianize import Gaussianize
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
+        compute_gaussianize: bool = False,
         eeg_norm_strategy: Literal['meanstd', 'log', 'gaussianize', 'gaussianize_meanstd', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         cache_dir: Optional[Path] = None,
@@ -65,15 +67,19 @@ class HmsDatamodule(LightningDataModule):
 
         self.cache = None
 
-    def build_train_stats(self, do_gaussianize=False):
+    def build_train_stats(self):
         # Gaussianize EEG
-        gaussianize = None
-        if do_gaussianize:
+        if self.hparams.compute_gaussianize:
             gaussianize = build_gaussianize(
                 self.train_dataset, 
                 n_samples=10,
                 random_state=123125
             )
+        else:
+            # Note: there is a small dataleak
+            # because coefs are fitted on a whole train data
+            gaussianize = Gaussianize()
+            gaussianize.coefs_ = EEG_GAUSSIANIZE_COEFS_TRAIN
 
         # EEG stats
         eeg_mean, eeg_std, *_ = build_stats(
@@ -107,7 +113,7 @@ class HmsDatamodule(LightningDataModule):
         gaussianize = None
         if self.hparams.eeg_norm_strategy is not None:
             eeg_mean, eeg_std, spectrogram_mean, spectrogram_std, gaussianize = \
-                self.build_train_stats(self.hparams.eeg_norm_strategy == 'gaussianize_meanstd')
+                self.build_train_stats()
 
         self.train_transform = Compose(
             [

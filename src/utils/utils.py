@@ -273,6 +273,7 @@ def build_gaussianize(
         eed = eed.dropna(subset=EEG_COLS_ORDERED)
         eeds.append(eed.sample(n_sample, random_state=random_state))
     df_sample = pd.concat(eeds)
+    df_sample = df_sample[EEG_COLS_ORDERED]
     gaussianize = Gaussianize(max_iter=100, tol=1e-4)
     gaussianize.fit(df_sample.values, names=df_sample.columns)
     return gaussianize
