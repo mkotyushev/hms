@@ -104,6 +104,6 @@ data:
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8
-    pin_memory: False
+    pin_memory: false
     prefetch_factor: 2
-    persistent_workers: True
+    persistent_workers: false
