@@ -98,7 +98,8 @@ data:
     n_splits: 5
     random_subrecord_mode: discrete
     load_kwargs:
-      gaussianize_mode: pre
+      gaussianize_mode: null
+      do_mel_eeg: false
     eeg_norm_strategy: meanstd
     spectrogram_norm_strategy: log
     cache_dir: /workspace/data_external/.cache

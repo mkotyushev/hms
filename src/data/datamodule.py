@@ -18,7 +18,7 @@ from src.data.transforms import (
     ReshapeToPatches,
     Compose,
     Normalize,
-    GaussianizeEegPretransform,
+    Pretransform,
 )
 from src.utils.utils import (
     CacheDictWithSave,
@@ -251,8 +251,12 @@ class HmsDatamodule(LightningDataModule):
         df_meta_train, df_meta_val = df_meta.iloc[train_indices], df_meta.iloc[val_indices]
 
         # Build pre-transform
-        self.pre_transform = GaussianizeEegPretransform(
-            gaussianize=self.build_gaussianize(df_meta_train),
+        self.pre_transform = Pretransform(
+            gaussianize_eeg=self.build_gaussianize(df_meta_train),
+            do_mel_eeg=(
+                'do_mel_eeg' in self.hparams.load_kwargs and 
+                self.hparams.load_kwargs['do_mel_eeg'] is not None
+            )
         )
 
         if self.train_dataset is None:

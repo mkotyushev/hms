@@ -1,7 +1,9 @@
+import librosa
 import math
 import numpy as np
 import random
 from copy import deepcopy
+from threadpoolctl import threadpool_limits
 from typing import Dict, List, Callable
 
 from .constants import (
@@ -12,6 +14,7 @@ from .constants import (
     N_SPECTROGRAM_TILES,
     N_EEG_TIME_WINDOW,
     EEG_COLS_ORDERED,
+    EEG_FFT_WINDOW_SIZE,
 )
 
 
@@ -283,14 +286,50 @@ class Normalize:
         return item
 
 
-class GaussianizeEegPretransform:
-    def __init__(self, gaussianize):
-        self.gaussianize = gaussianize
+class Pretransform:
+    def __init__(self, gaussianize_eeg, do_mel_eeg):
+        self.gaussianize_eeg = gaussianize_eeg
+        self.do_mel_eeg = do_mel_eeg
     
     def __call__(self, df):
-        if self.gaussianize is None or 'EKG' not in df.columns:
-            return df
-        df[EEG_COLS_ORDERED] = self.gaussianize.transform(df[EEG_COLS_ORDERED].values)
+        is_eeg = 'EKG' in df.columns
+        # Gaussianize
+        if is_eeg and self.gaussianize_eeg is not None:
+            df[EEG_COLS_ORDERED] = self.gaussianize_eeg.transform(df[EEG_COLS_ORDERED].values)
+    
+        # Mel transform
+        if is_eeg and self.do_mel_eeg:
+            # https://www.kaggle.com/code/cdeotte/how-to-make-spectrogram-from-eeg
+            # (T, F=20) -> (F=20, K=N_EEG_TIME_WINDOW, T'=T//N_EEG_TIME_WINDOW)
+            T, F = df.values.shape
+            assert T % N_EEG_TIME_WINDOW == 0
+
+            # Fill nan
+            eeg = df[EEG_COLS_ORDERED].values
+            nan_mask = np.isnan(eeg).any(1)
+            if not nan_mask.all():
+                fill = np.nanmean(eeg, axis=0)
+                eeg[nan_mask] = fill
+            else:
+                eeg[:] = 0
+            
+            # Get spectrogram
+            with threadpool_limits(limits=1):
+                mel_spec = librosa.feature.melspectrogram(
+                    y=eeg.T, 
+                    sr=EED_SAMPLING_RATE_HZ, 
+                    hop_length=N_EEG_TIME_WINDOW, 
+                    n_fft=EEG_FFT_WINDOW_SIZE, 
+                    n_mels=N_EEG_TIME_WINDOW,
+                    fmax=20,
+                )
+
+            # Truncate for alignment
+            mel_spec = mel_spec[:, :, :-1]
+
+            # Reshape back
+            df[EEG_COLS_ORDERED] = mel_spec.transpose([2, 1, 0]).reshape(T, F)
+
         return df
 
 
