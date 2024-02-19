@@ -40,10 +40,10 @@ class HmsDataset:
         spectrogram_id = df['spectrogram_id'].iloc[0]  # all spectrogram_id are same 
 
         # Get item
-        df_eeg = self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet')
+        eeg = self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet')
         df_spectrogram = self.read_parquet(self.spectrogram_dirpath / f'{spectrogram_id}.parquet')
         item = {
-            'eeg': df_eeg[EEG_COLS_ORDERED].values,
+            'eeg': eeg,
             'spectrogram': df_spectrogram[SPECTROGRAM_COLS_ORDERED].values,
             'spectrogram_time': df_spectrogram['time'].values,
             'label': df[LABEL_COLS_ORDERED].values,

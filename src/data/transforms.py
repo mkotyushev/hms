@@ -138,9 +138,15 @@ class Subrecord:
     def _select_by_subrecord(self, subrecord, **item):
         # Extract sub EEG & spectrogram
         eeg = item['eeg']
-        eeg_start_index = int(subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ)
-        eeg_stop_index = eeg_start_index + EED_N_SAMPLES
-        eeg = eeg[eeg_start_index:eeg_stop_index]
+        if eeg.ndim == 2:
+            eeg_start_index = int(subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ)
+            eeg_stop_index = eeg_start_index + EED_N_SAMPLES
+            eeg = eeg[eeg_start_index:eeg_stop_index]
+        else:
+            assert eeg.ndim == 3
+            eeg_start_index = int(subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ / N_EEG_TIME_WINDOW)
+            eeg_stop_index = eeg_start_index + EED_N_SAMPLES // N_EEG_TIME_WINDOW
+            eeg = eeg[eeg_start_index:eeg_stop_index]
 
         spectrogram = item['spectrogram']
         spectrogram_time = item['spectrogram_time']
@@ -218,12 +224,16 @@ class ReshapeToPatches:
             F // N_SPECTROGRAM_TILES
         ).transpose((1, 0, 2))
 
-        # e: (T=10000, F=20) -> (T=50, K=200, F=20)
         eeg = item['eeg']
-        T, F = eeg.shape
-        assert T % N_EEG_TIME_WINDOW == 0
-        T_new = T // N_EEG_TIME_WINDOW
-        eeg = eeg.reshape(T_new, N_EEG_TIME_WINDOW, F)
+        if eeg.ndim == 2:
+            # e: (T=10000, F=20) -> (T=50, K=200, F=20)
+            T, F = eeg.shape
+            assert T % N_EEG_TIME_WINDOW == 0
+            T_new = T // N_EEG_TIME_WINDOW
+            eeg = eeg.reshape(T_new, N_EEG_TIME_WINDOW, F)
+        else:
+            # Already (T, K, F)
+            assert eeg.ndim == 3
 
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg
@@ -296,24 +306,30 @@ class Pretransform:
     def __call__(self, df):
         is_eeg = 'EKG' in df.columns
 
-        if is_eeg and self.do_clip_eeg:
+        if not is_eeg:
+            return df
+
+        # Clip
+        if self.do_clip_eeg:
             # Clip to ~ 0.99 quantile
             df[df.columns.difference(['EKG'])] = df[df.columns.difference(['EKG'])].clip(-5000, 5000)
             df['EKG'] = df['EKG'].clip(-10000, 10000)
 
+        # Convert to array
+        eeg = df[EEG_COLS_ORDERED].values
+
         # Gaussianize
-        if is_eeg and self.gaussianize_eeg is not None:
-            df[EEG_COLS_ORDERED] = self.gaussianize_eeg.transform(df[EEG_COLS_ORDERED].values)
+        if self.gaussianize_eeg is not None:
+            eeg = self.gaussianize_eeg.transform(eeg)
     
         # Mel transform
         if is_eeg and self.do_mel_eeg:
             # https://www.kaggle.com/code/cdeotte/how-to-make-spectrogram-from-eeg
             # (T, F=20) -> (F=20, K=N_EEG_TIME_WINDOW, T'=T//N_EEG_TIME_WINDOW)
-            T, F = df.values.shape
+            T, F = eeg.shape
             assert T % N_EEG_TIME_WINDOW == 0
 
             # Fill nan
-            eeg = df[EEG_COLS_ORDERED].values
             nan_mask = np.isnan(eeg).any(1)
             if not nan_mask.all():
                 fill = np.nanmean(eeg, axis=0)
@@ -335,10 +351,10 @@ class Pretransform:
             # Truncate for alignment
             mel_spec = mel_spec[:, :, :-1]
 
-            # Reshape back
-            df[EEG_COLS_ORDERED] = mel_spec.transpose([2, 1, 0]).reshape(T, F)
+            # Reshape to (T', K, F)
+            eeg = mel_spec.transpose([2, 1, 0])
 
-        return df
+        return eeg
 
 
 class FillNan:
