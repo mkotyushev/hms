@@ -287,12 +287,20 @@ class Normalize:
 
 
 class Pretransform:
-    def __init__(self, gaussianize_eeg, do_mel_eeg):
+    def __init__(self, do_clip_eeg, gaussianize_eeg, do_mel_eeg, max_threads=1):
+        self.do_clip_eeg = do_clip_eeg
         self.gaussianize_eeg = gaussianize_eeg
         self.do_mel_eeg = do_mel_eeg
+        self.max_threads = max_threads
     
     def __call__(self, df):
         is_eeg = 'EKG' in df.columns
+
+        if is_eeg and self.do_clip_eeg:
+            # Clip to ~ 0.99 quantile
+            df[df.columns.difference(['EKG'])] = df[df.columns.difference(['EKG'])].clip(-5000, 5000)
+            df['EKG'] = df['EKG'].clip(-10000, 10000)
+
         # Gaussianize
         if is_eeg and self.gaussianize_eeg is not None:
             df[EEG_COLS_ORDERED] = self.gaussianize_eeg.transform(df[EEG_COLS_ORDERED].values)
@@ -314,7 +322,7 @@ class Pretransform:
                 eeg[:] = 0
             
             # Get spectrogram
-            with threadpool_limits(limits=1):
+            with threadpool_limits(limits=self.max_threads):
                 mel_spec = librosa.feature.melspectrogram(
                     y=eeg.T, 
                     sr=EED_SAMPLING_RATE_HZ, 

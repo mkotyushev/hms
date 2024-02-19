@@ -100,6 +100,7 @@ data:
     load_kwargs:
       gaussianize_mode: null
       do_mel_eeg: false
+      do_clip_eeg: true
     eeg_norm_strategy: meanstd
     spectrogram_norm_strategy: log
     cache_dir: /workspace/data_external/.cache

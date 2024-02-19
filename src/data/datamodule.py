@@ -252,11 +252,22 @@ class HmsDatamodule(LightningDataModule):
 
         # Build pre-transform
         self.pre_transform = Pretransform(
+            do_clip_eeg=(
+                'do_clip_eeg' in self.hparams.load_kwargs and 
+                self.hparams.load_kwargs['do_clip_eeg'] is not None
+            ),
             gaussianize_eeg=self.build_gaussianize(df_meta_train),
             do_mel_eeg=(
                 'do_mel_eeg' in self.hparams.load_kwargs and 
                 self.hparams.load_kwargs['do_mel_eeg'] is not None
-            )
+            ),
+            # librosa is kind of bad with unlimited threads + MP 
+            # (as when there is no cache and the pretransform 
+            # is performed in dataloader), but if cache is enabled, 
+            # it is populated (and the pretransform is called) 
+            # in the main process. So, if cache is enabled, raise the
+            # threading limit.
+            max_threads=1 if self.hparams.cache_dir is None else 11
         )
 
         if self.train_dataset is None:
