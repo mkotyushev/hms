@@ -1,6 +1,7 @@
 import librosa
 import math
 import numpy as np
+import pandas as pd
 import random
 from copy import deepcopy
 from threadpoolctl import threadpool_limits
@@ -303,7 +304,7 @@ class Pretransform:
         self.do_mel_eeg = do_mel_eeg
         self.max_threads = max_threads
     
-    def __call__(self, df):
+    def __call__(self, df: pd.DataFrame) -> pd.DataFrame | np.ndarray:
         is_eeg = 'EKG' in df.columns
 
         if not is_eeg:
@@ -315,15 +316,15 @@ class Pretransform:
             df[df.columns.difference(['EKG'])] = df[df.columns.difference(['EKG'])].clip(-5000, 5000)
             df['EKG'] = df['EKG'].clip(-10000, 10000)
 
-        # Convert to array
-        eeg = df[EEG_COLS_ORDERED].values
-
         # Gaussianize
         if self.gaussianize_eeg is not None:
-            eeg = self.gaussianize_eeg.transform(eeg)
+            df[EEG_COLS_ORDERED] = self.gaussianize_eeg.transform(df[EEG_COLS_ORDERED].values)
     
         # Mel transform
-        if is_eeg and self.do_mel_eeg:
+        if self.do_mel_eeg:
+            # Convert to array
+            eeg = df[EEG_COLS_ORDERED].values
+
             # https://www.kaggle.com/code/cdeotte/how-to-make-spectrogram-from-eeg
             # (T, F=20) -> (F=20, K=N_EEG_TIME_WINDOW, T'=T//N_EEG_TIME_WINDOW)
             T, F = eeg.shape
@@ -352,9 +353,9 @@ class Pretransform:
             mel_spec = mel_spec[:, :, :-1]
 
             # Reshape to (T', K, F)
-            eeg = mel_spec.transpose([2, 1, 0])
+            df = mel_spec.transpose([2, 1, 0])
 
-        return eeg
+        return df
 
 
 class FillNan:

@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from pathlib import Path
@@ -40,7 +41,11 @@ class HmsDataset:
         spectrogram_id = df['spectrogram_id'].iloc[0]  # all spectrogram_id are same 
 
         # Get item
-        eeg = self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet')
+        df_eeg_or_eeg = self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet')
+        if isinstance(df_eeg_or_eeg, np.ndarray):
+            eeg = df_eeg_or_eeg
+        else:
+            eeg = df_eeg_or_eeg[EEG_COLS_ORDERED].values
         df_spectrogram = self.read_parquet(self.spectrogram_dirpath / f'{spectrogram_id}.parquet')
         item = {
             'eeg': eeg,
