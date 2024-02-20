@@ -254,12 +254,12 @@ class HmsDatamodule(LightningDataModule):
         self.pre_transform = Pretransform(
             do_clip_eeg=(
                 'do_clip_eeg' in self.hparams.load_kwargs and 
-                self.hparams.load_kwargs['do_clip_eeg'] is not None
+                self.hparams.load_kwargs['do_clip_eeg']
             ),
             gaussianize_eeg=self.build_gaussianize(df_meta_train),
             do_mel_eeg=(
                 'do_mel_eeg' in self.hparams.load_kwargs and 
-                self.hparams.load_kwargs['do_mel_eeg'] is not None
+                self.hparams.load_kwargs['do_mel_eeg']
             ),
             # librosa is kind of bad with unlimited threads + MP 
             # (as when there is no cache and the pretransform 
