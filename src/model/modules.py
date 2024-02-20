@@ -394,6 +394,7 @@ class HmsModule(BaseModule):
         dropout=0.1,
         depth=8,
         cheap_cross=False,
+        pool: Literal['cls', '10sec'] = 'cls',
         lr=None,
         use: Literal['all', 'spectrogram', 'eeg'] = 'all',
         **base_kwargs,
@@ -412,6 +413,7 @@ class HmsModule(BaseModule):
             dropout=dropout,
             depth=depth,
             cheap_cross=cheap_cross,
+            pool=pool,
         )
         
     def compute_loss_preds(self, batch, *args, **kwargs):

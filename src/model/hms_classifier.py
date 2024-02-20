@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from einops import repeat
+from typing import Literal
 
 
 class Mlp(nn.Module):
@@ -154,6 +155,7 @@ class HmsClassifier(nn.Module):
         dropout,
         depth,
         cheap_cross,
+        pool: Literal['cls', '10sec'] = 'cls',
     ):
         super().__init__()
 
@@ -172,6 +174,7 @@ class HmsClassifier(nn.Module):
 
         # Common
         self.dropout = nn.Dropout(dropout)
+        self.pool = pool
 
         # Encoder
         self.encoder = nn.Sequential(
@@ -191,8 +194,8 @@ class HmsClassifier(nn.Module):
         # Flatten patches
         if x_s is not None:
             # s: (B, K=4, T=300, E=100) -> (B, N=1200, E=100)
-            B, _, _, E = x_s.shape
-            x_s = x_s.reshape(B, -1, E)
+            B_s, K_s, T_s, E_s = x_s.shape
+            x_s = x_s.reshape(B_s, -1, E_s)
 
             # Patch embed & pos embed
             x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s, self.nan_token_s)
@@ -200,9 +203,9 @@ class HmsClassifier(nn.Module):
         
         if x_e is not None:
             # e: (B, T=50, E=200, F=20) -> (B, N=1000, E=200)
-            B, _, E, _ = x_e.shape
+            B_e, T_e, E_e, F_e = x_e.shape
             x_e = x_e.permute([0, 1, 3, 2])
-            x_e = x_e.reshape(B, -1, E)
+            x_e = x_e.reshape(B_e, -1, E_e)
 
             # Patch embed & pos embed
             x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e, self.nan_token_e)
@@ -214,11 +217,34 @@ class HmsClassifier(nn.Module):
         # Classify
         x = 0
         if x_s is not None:
-            x_s = x_s[:, 0]
+            if self.pool == 'cls':
+                # Use single class token
+                x_s = x_s[:, 0]  # (B, E')
+            elif self.pool == '10sec':
+                # TODO: experiment with alignment (-3 +2 or -2 +3)
+                # Select "middle" 10 sec (T = 300 == 600 sec)
+                # x_s: (B, N = K * T = 4 * 300 = 1200, E')
+                x_s = x_s[:, 1:, :]
+                x_s = x_s.reshape(B_s, K_s, T_s, -1)
+                T_center_index = T_s // 2
+                x_s = x_s[:, :, T_center_index - 3:T_center_index + 2, :].mean((1, 2))  # (B, E')
+            else:
+                raise ValueError(f'unknown pool {self.pool}')
             x_s = self.mlp_s(x_s)
             x = x + x_s / 2
         if x_e is not None:
-            x_e = x_e[:, 0]
+            if self.pool == 'cls':
+                # Use single class token
+                x_e = x_e[:, 0]  # (B, E')
+            elif self.pool == '10sec':
+                # Select middle 10 sec (T = 50 == 50 sec)
+                # x_e: (B, N = T * F = 50 * 20 = 1000, E')
+                x_e = x_e[:, 1:, :]
+                x_e = x_e.reshape(B_e, T_e, F_e, -1)
+                T_center_index = T_e // 2
+                x_e = x_e[:, T_center_index - 5:T_center_index + 5, :, :].mean((1, 2))  # (B, E')
+            else:
+                raise ValueError(f'unknown pool {self.pool}')
             x_e = self.mlp_e(x_e)
             x = x + x_e / 2
         
