@@ -1,7 +1,7 @@
 import logging
 import torch
 from lightning import LightningModule
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, Literal
 from torch import Tensor
 import torch.nn.functional as F
 from lightning.pytorch.cli import instantiate_class
@@ -395,9 +395,12 @@ class HmsModule(BaseModule):
         depth=8,
         cheap_cross=False,
         lr=None,
+        use: Literal['all', 'spectrogram', 'eeg'] = 'all',
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
+        self.save_hyperparameters()
+
         self.model = HmsClassifier(
             n_classes=N_CLASSES,
             input_dim_s=100,
@@ -412,7 +415,13 @@ class HmsModule(BaseModule):
         )
         
     def compute_loss_preds(self, batch, *args, **kwargs):
-        preds = self.model(batch['spectrogram'], batch['eeg'])
+        if self.hparams.use == 'all':
+            x_s, x_e = batch['spectrogram'], batch['eeg']
+        elif self.hparams.use == 'spectrogram':
+            x_s, x_e = batch['spectrogram'], None
+        elif self.hparams.use == 'eeg':
+            x_s, x_e = None, batch['eeg']
+        preds = self.model(x_s, x_e)
         target = batch['label'] / batch['label'].sum(1)[:, None]
         log_preds = F.log_softmax(preds, dim=1)
         losses = {

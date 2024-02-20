@@ -74,32 +74,39 @@ class HmsEncoderLayer(nn.Module):
         x_s, x_e = x
         
         # Self
-        x_s = self.norm_s_1(x_s + self.dropout(self.self_attn_s(x_s, x_s, x_s, need_weights=False)[0]))
-        x_e = self.norm_e_1(x_e + self.dropout(self.self_attn_e(x_e, x_e, x_e, need_weights=False)[0]))
+        if x_s is not None:
+            x_s = self.norm_s_1(x_s + self.dropout(self.self_attn_s(x_s, x_s, x_s, need_weights=False)[0]))
+        if x_e is not None:
+            x_e = self.norm_e_1(x_e + self.dropout(self.self_attn_e(x_e, x_e, x_e, need_weights=False)[0]))
 
         # Cross
-        if self.cheap_cross:
-            # Note: norm_*_2 not used
-            class_token_s, x_s = x_s[:, 0:1, :], x_s[:, 1:, :]
-            class_token_e, x_e = x_e[:, 0:1, :], x_e[:, 1:, :]
+        if x_s is not None and x_e is not None:
+            if self.cheap_cross:
+                # Note: norm_*_2 not used
+                class_token_s, x_s = x_s[:, 0:1, :], x_s[:, 1:, :]
+                class_token_e, x_e = x_e[:, 0:1, :], x_e[:, 1:, :]
 
-            class_token_s = self.cross_in_s(class_token_s)
-            class_token_s = class_token_s + self.cross_attn_s(class_token_s, x_e, x_e, need_weights=False)[0]
-            class_token_s = self.cross_out_s(class_token_s)
-            x_s_after_cross = torch.cat([class_token_s, x_s], dim=1)
-            
-            class_token_e = self.cross_in_e(class_token_e)
-            class_token_e = class_token_e + self.cross_attn_e(class_token_e, x_s, x_s, need_weights=False)[0]
-            class_token_e = self.cross_out_e(class_token_e)
-            x_e_after_cross = torch.cat([class_token_e, x_e], dim=1)
+                class_token_s = self.cross_in_s(class_token_s)
+                class_token_s = class_token_s + self.cross_attn_s(class_token_s, x_e, x_e, need_weights=False)[0]
+                class_token_s = self.cross_out_s(class_token_s)
+                x_s_after_cross = torch.cat([class_token_s, x_s], dim=1)
+                
+                class_token_e = self.cross_in_e(class_token_e)
+                class_token_e = class_token_e + self.cross_attn_e(class_token_e, x_s, x_s, need_weights=False)[0]
+                class_token_e = self.cross_out_e(class_token_e)
+                x_e_after_cross = torch.cat([class_token_e, x_e], dim=1)
+            else:
+                x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e, x_e, need_weights=False)[0]))
+                x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s, x_s, need_weights=False)[0]))
+            x_s, x_e = x_s_after_cross, x_e_after_cross
         else:
-            x_s_after_cross = self.norm_s_2(x_s + self.dropout(self.cross_attn_s(x_s, x_e, x_e, need_weights=False)[0]))
-            x_e_after_cross = self.norm_e_2(x_e + self.dropout(self.cross_attn_e(x_e, x_s, x_s, need_weights=False)[0]))
-        x_s, x_e = x_s_after_cross, x_e_after_cross
+            x_s_after_cross, x_e_after_cross = x_s, x_e
 
         # Mlp
-        x_s = self.norm_s_3(x_s + self.mlp_s(x_s))
-        x_e = self.norm_e_3(x_e + self.mlp_e(x_e))
+        if x_s is not None:
+            x_s = self.norm_s_3(x_s + self.mlp_s(x_s))
+        if x_e is not None:
+            x_e = self.norm_e_3(x_e + self.mlp_e(x_e))
 
         x = x_s, x_e
 
@@ -179,30 +186,40 @@ class HmsClassifier(nn.Module):
         self.mlp_e = Mlp(embed_dim, embed_dim, n_classes, dropout)
     
     def forward(self, x_s, x_e):
+        assert x_s is not None or x_e is not None
+
         # Flatten patches
+        if x_s is not None:
+            # s: (B, K=4, T=300, E=100) -> (B, N=1200, E=100)
+            B, _, _, E = x_s.shape
+            x_s = x_s.reshape(B, -1, E)
 
-        # s: (B, K=4, T=300, E=100) -> (B, N=1200, E=100)
-        B, _, _, E = x_s.shape
-        x_s = x_s.reshape(B, -1, E)
+            # Patch embed & pos embed
+            x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s, self.nan_token_s)
+            x_s = self.dropout(x_s)
+        
+        if x_e is not None:
+            # e: (B, T=50, E=200, F=20) -> (B, N=1000, E=200)
+            B, _, E, _ = x_e.shape
+            x_e = x_e.permute([0, 1, 3, 2])
+            x_e = x_e.reshape(B, -1, E)
 
-        # e: (B, T=50, E=200, F=20) -> (B, N=1000, E=200)
-        B, _, E, _ = x_e.shape
-        x_e = x_e.permute([0, 1, 3, 2])
-        x_e = x_e.reshape(B, -1, E)
-
-        # Patch embed & pos embed
-        x_s = embed(x_s, self.patch_embed_s, self.pos_embed_s, self.cls_token_s, self.nan_token_s)
-        x_s = self.dropout(x_s)
-        x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e, self.nan_token_e)
-        x_e = self.dropout(x_e)
+            # Patch embed & pos embed
+            x_e = embed(x_e, self.patch_embed_e, self.pos_embed_e, self.cls_token_e, self.nan_token_e)
+            x_e = self.dropout(x_e)
 
         # Encode
         x_s, x_e = self.encoder((x_s, x_e))
 
         # Classify
-        x_s, x_e = x_s[:, 0], x_e[:, 0]
-        x_s = self.mlp_s(x_s)
-        x_e = self.mlp_e(x_e)
-        x = x_s + x_e
+        x = 0
+        if x_s is not None:
+            x_s = x_s[:, 0]
+            x_s = self.mlp_s(x_s)
+            x = x + x_s / 2
+        if x_e is not None:
+            x_e = x_e[:, 0]
+            x_e = self.mlp_e(x_e)
+            x = x + x_e / 2
         
         return x

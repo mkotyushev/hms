@@ -65,6 +65,7 @@ model:
     dropout: 0.1
     depth: 2
     cheap_cross: false
+    use: all
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:
