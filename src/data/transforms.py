@@ -1,10 +1,7 @@
-import librosa
 import math
 import numpy as np
-import pandas as pd
 import random
 from copy import deepcopy
-from threadpoolctl import threadpool_limits
 from typing import Dict, List, Callable
 
 from .constants import (
@@ -14,8 +11,6 @@ from .constants import (
     LABEL_COLS_ORDERED,
     N_SPECTROGRAM_TILES,
     N_EEG_TIME_WINDOW,
-    EEG_COLS_ORDERED,
-    EEG_FFT_WINDOW_SIZE,
 )
 
 
@@ -295,67 +290,6 @@ class Normalize:
         item['eeg'] = eeg
         
         return item
-
-
-class Pretransform:
-    def __init__(self, do_clip_eeg, gaussianize_eeg, do_mel_eeg, max_threads=1):
-        self.do_clip_eeg = do_clip_eeg
-        self.gaussianize_eeg = gaussianize_eeg
-        self.do_mel_eeg = do_mel_eeg
-        self.max_threads = max_threads
-    
-    def __call__(self, df: pd.DataFrame) -> pd.DataFrame | np.ndarray:
-        is_eeg = 'EKG' in df.columns
-
-        if not is_eeg:
-            return df
-
-        # Clip
-        if self.do_clip_eeg:
-            # Clip to ~ 0.99 quantile
-            df[df.columns.difference(['EKG'])] = df[df.columns.difference(['EKG'])].clip(-5000, 5000)
-            df['EKG'] = df['EKG'].clip(-10000, 10000)
-
-        # Gaussianize
-        if self.gaussianize_eeg is not None:
-            df[EEG_COLS_ORDERED] = self.gaussianize_eeg.transform(df[EEG_COLS_ORDERED].values)
-    
-        # Mel transform
-        if self.do_mel_eeg:
-            # Convert to array
-            eeg = df[EEG_COLS_ORDERED].values
-
-            # https://www.kaggle.com/code/cdeotte/how-to-make-spectrogram-from-eeg
-            # (T, F=20) -> (F=20, K=N_EEG_TIME_WINDOW, T'=T//N_EEG_TIME_WINDOW)
-            T, F = eeg.shape
-            assert T % N_EEG_TIME_WINDOW == 0
-
-            # Fill nan
-            nan_mask = np.isnan(eeg).any(1)
-            if not nan_mask.all():
-                fill = np.nanmean(eeg, axis=0)
-                eeg[nan_mask] = fill
-            else:
-                eeg[:] = 0
-            
-            # Get spectrogram
-            with threadpool_limits(limits=self.max_threads):
-                mel_spec = librosa.feature.melspectrogram(
-                    y=eeg.T, 
-                    sr=EED_SAMPLING_RATE_HZ, 
-                    hop_length=N_EEG_TIME_WINDOW, 
-                    n_fft=EEG_FFT_WINDOW_SIZE, 
-                    n_mels=N_EEG_TIME_WINDOW,
-                    fmax=20,
-                )
-
-            # Truncate for alignment
-            mel_spec = mel_spec[:, :, :-1]
-
-            # Reshape to (T', K, F)
-            df = mel_spec.transpose([2, 1, 0])
-
-        return df
 
 
 class FillNan:

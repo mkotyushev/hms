@@ -10,7 +10,6 @@ from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
 
-from .constants import EEG_GAUSSIANIZE_COEFS_TRAIN
 from src.data.dataset import HmsDataset
 from src.data.transforms import (
     RandomSubrecord,
@@ -18,15 +17,13 @@ from src.data.transforms import (
     ReshapeToPatches,
     Compose,
     Normalize,
-    Pretransform,
 )
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
     build_stats,
-    build_gaussianize,
 )
-from src.utils.gaussianize import Gaussianize
+from src.data.pretransform import Pretransform, build_gaussianize
 
 
 logger = logging.getLogger(__name__)
@@ -66,35 +63,6 @@ class HmsDatamodule(LightningDataModule):
         self.pre_transform = None
 
         self.cache = None
-
-    def build_gaussianize(self, df_meta):
-        # Gaussianize EEG
-        if (
-            'gaussianize_mode' not in self.hparams.load_kwargs or 
-            self.hparams.load_kwargs['gaussianize_mode'] is None
-        ):
-            return None
-        
-        gaussianize = None
-        if self.hparams.load_kwargs['gaussianize_mode'] == 'online':
-            # Build coeffs from a given dataset
-            gaussianize = build_gaussianize(
-                df_meta, 
-                n_samples=10,
-                random_state=123125
-            )
-            gaussianize.coefs_ = np.array(gaussianize.coefs_, dtype=np.float32)
-        elif self.hparams.load_kwargs['gaussianize_mode'] == 'pre':
-            # Note: there is a small dataleak
-            # because coefs are fitted on a whole train data
-            gaussianize = Gaussianize()
-            gaussianize.coefs_ = np.array(EEG_GAUSSIANIZE_COEFS_TRAIN, dtype=np.float32)
-        else:
-            raise ValueError(
-                f'unknown gaussianize_mode '
-                f'{self.hparams.load_kwargs["gaussianize_mode"]}'
-            )
-        return gaussianize
 
     def build_train_stats(self):
         # EEG stats
@@ -175,10 +143,13 @@ class HmsDatamodule(LightningDataModule):
         # is changed.
         with open(Path(__file__).parent / 'dataset.py', 'rb') as f:
             datasets_content = f.read()
-            datasets_file_hash = hashlib.md5(
-                datasets_content + 
-                str(self.hparams.load_kwargs).encode()
-            ).hexdigest()
+        with open(Path(__file__).parent / 'pretransform.py', 'rb') as f:
+            pretransform_content = f.read()
+        datasets_file_hash = hashlib.md5(
+            datasets_content + 
+            pretransform_content +
+            str(self.hparams.load_kwargs).encode()
+        ).hexdigest()
         cache_save_path = self.hparams.cache_dir / f'{datasets_file_hash}.joblib'
 
         self.cache = CacheDictWithSave(
@@ -252,15 +223,14 @@ class HmsDatamodule(LightningDataModule):
 
         # Build pre-transform
         self.pre_transform = Pretransform(
-            do_clip_eeg=(
-                'do_clip_eeg' in self.hparams.load_kwargs and 
-                self.hparams.load_kwargs['do_clip_eeg']
+            do_clip_eeg=self.hparams.load_kwargs.get('do_clip_eeg', False),
+            gaussianize_eeg=build_gaussianize(
+                df_meta_train, 
+                n_sample=10,
+                random_state=123125,
+                mode=self.hparams.load_kwargs.get('gaussianize_mode', None),
             ),
-            gaussianize_eeg=self.build_gaussianize(df_meta_train),
-            do_mel_eeg=(
-                'do_mel_eeg' in self.hparams.load_kwargs and 
-                self.hparams.load_kwargs['do_mel_eeg']
-            ),
+            do_mel_eeg=self.hparams.load_kwargs.get('do_mel_eeg', False),
             # librosa is kind of bad with unlimited threads + MP 
             # (as when there is no cache and the pretransform 
             # is performed in dataloader), but if cache is enabled, 

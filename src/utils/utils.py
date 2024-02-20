@@ -19,7 +19,7 @@ from src.data.constants import (
     SPECTROGRAM_COLS_ORDERED, 
     EEG_COLS_ORDERED,
 )
-from .gaussianize import Gaussianize
+from src.data.pretransform import Gaussianize
 
 
 logger = logging.getLogger(__name__)
@@ -255,23 +255,6 @@ def build_has_outliers(
         has_outlier.append(any(values))
     
     return has_outlier
-
-
-def build_gaussianize(
-    df_meta, 
-    n_sample=10,
-    random_state=123125,
-):
-    eeds = []
-    for eed_id in tqdm(sorted(df_meta['eeg_id'].unique())):
-        eed = pd.read_parquet(f"/workspace/data_external/train_eegs/{eed_id}.parquet")
-        eed = eed.dropna(subset=EEG_COLS_ORDERED)
-        eeds.append(eed.sample(n_sample, random_state=random_state))
-    df_sample = pd.concat(eeds)
-    df_sample = df_sample[EEG_COLS_ORDERED]
-    gaussianize = Gaussianize(max_iter=100, tol=1e-4)
-    gaussianize.fit(df_sample.values, names=df_sample.columns)
-    return gaussianize
 
 
 class CacheDictWithSave(dict):

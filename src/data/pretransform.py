@@ -7,18 +7,28 @@ Transform data so that it is approximately normally distributed
 This code written by Greg Ver Steeg, 2015.
 """
 
-from typing import Text, List, Union
-
-import numpy as np
+import librosa
 import logging
-from tqdm.auto import tqdm
+import numpy as np
+import os
+import pandas as pd
+import sklearn
 from scipy import special
 from scipy.stats import kurtosis, norm, rankdata, boxcox
 from scipy import optimize  # TODO: Explore efficacy of other opt. methods
-import sklearn
+from threadpoolctl import threadpool_limits
+from tqdm.auto import tqdm
+from typing import Text, List, Union
 from matplotlib import pylab as plt
 from scipy import stats
-import os
+
+from .constants import (
+    EED_SAMPLING_RATE_HZ, 
+    N_EEG_TIME_WINDOW,
+    EEG_COLS_ORDERED,
+    EEG_FFT_WINDOW_SIZE,
+    EEG_GAUSSIANIZE_COEFS_TRAIN,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -220,121 +230,93 @@ def delta_init(z):
     return delta0
 
 
-if __name__ == '__main__':
-    # Command line interface
-    # Sample commands:
-    # python gaussianize.py test_data.csv
-    import csv
-    import sys, os
-    import traceback
-    from optparse import OptionParser, OptionGroup
+def build_gaussianize(
+    df_meta, 
+    n_sample=10,
+    random_state=123125,
+    mode=None
+):
+    if mode is None:
+        gaussianize = None
+    elif mode == 'pre':
+        # Load coeffs from constants
+        gaussianize = Gaussianize()
+        gaussianize.coefs_ = np.array(EEG_GAUSSIANIZE_COEFS_TRAIN, dtype=np.float32)
+    elif mode == 'online':
+        # Sample from EED dataframe
+        eeds = []
+        for eed_id in tqdm(sorted(df_meta['eeg_id'].unique())):
+            eed = pd.read_parquet(f"/workspace/data_external/train_eegs/{eed_id}.parquet")
+            eed = eed.dropna(subset=EEG_COLS_ORDERED)
+            eeds.append(eed.sample(n_sample, random_state=random_state))
+        df_sample = pd.concat(eeds)
+        df_sample = df_sample[EEG_COLS_ORDERED]
 
-    parser = OptionParser(usage="usage: %prog [options] data_file.csv \n"
-                                "It is assumed that the first row and first column of the data CSV file are labels.\n"
-                                "Use options to indicate otherwise.")
-    group = OptionGroup(parser, "Input Data Format Options")
-    group.add_option("-c", "--no_column_names",
-                     action="store_true", dest="nc", default=False,
-                     help="We assume the top row is variable names for each column. "
-                          "This flag says that data starts on the first row and gives a "
-                          "default numbering scheme to the variables (1,2,3...).")
-    group.add_option("-r", "--no_row_names",
-                     action="store_true", dest="nr", default=False,
-                     help="We assume the first column is a label or index for each sample. "
-                          "This flag says that data starts on the first column.")
-    group.add_option("-d", "--delimiter",
-                     action="store", dest="delimiter", type="string", default=",",
-                     help="Separator between entries in the data, default is ','.")
-    parser.add_option_group(group)
+        # Fit
+        gaussianize = Gaussianize(max_iter=100, tol=1e-4)
+        gaussianize.fit(df_sample.values, names=df_sample.columns)
+    else:
+        raise ValueError(f'unknown gaussianize mode {mode}')
 
-    group = OptionGroup(parser, "Transform Options")
-    group.add_option("-s", "--strategy",
-                     action="store", dest="strategy", type="string", default="lambert",
-                     help="Strategy.")
-    parser.add_option_group(group)
+    return gaussianize
 
-    group = OptionGroup(parser, "Output Options")
-    group.add_option("-o", "--output",
-                     action="store", dest="output", type="string", default="gaussian_output.csv",
-                     help="Where to store gaussianized data.")
-    group.add_option("-q", "--qqplots",
-                     action="store_true", dest="q", default=False,
-                     help="Produce qq plots for each variable before and after transform.")
-    parser.add_option_group(group)
 
-    (options, args) = parser.parse_args()
-    if not len(args) == 1:
-        logger.warning("Run with '-h' option for usage help.")
-        sys.exit()
+class Pretransform:
+    def __init__(self, do_clip_eeg: bool, gaussianize_eeg: Gaussianize, do_mel_eeg: bool, max_threads: int = 1):
+        self.do_clip_eeg = do_clip_eeg
+        self.gaussianize_eeg = gaussianize_eeg
+        self.do_mel_eeg = do_mel_eeg
+        self.max_threads = max_threads
+    
+    def __call__(self, df: pd.DataFrame) -> pd.DataFrame | np.ndarray:
+        is_eeg = 'EKG' in df.columns
 
-    #Load data from csv file
-    filename = args[0]
-    with open(filename, 'rU') as csvfile:
-        reader = csv.reader(csvfile, delimiter=" ")  #options.delimiter)
-        if options.nc:
-            variable_names = None
-        else:
-            variable_names = reader.next()[(1 - options.nr):]
-        sample_names = []
-        data = []
-        for row in reader:
-            if options.nr:
-                sample_names = None
+        if not is_eeg:
+            return df
+
+        # Clip
+        if self.do_clip_eeg:
+            # Clip to ~ 0.99 quantile
+            df[df.columns.difference(['EKG'])] = df[df.columns.difference(['EKG'])].clip(-5000, 5000)
+            df['EKG'] = df['EKG'].clip(-10000, 10000)
+
+        # Gaussianize
+        if self.gaussianize_eeg is not None:
+            df[EEG_COLS_ORDERED] = self.gaussianize_eeg.transform(df[EEG_COLS_ORDERED].values)
+    
+        # Mel transform
+        if self.do_mel_eeg:
+            # Convert to array
+            eeg = df[EEG_COLS_ORDERED].values
+
+            # https://www.kaggle.com/code/cdeotte/how-to-make-spectrogram-from-eeg
+            # (T, F=20) -> (F=20, K=N_EEG_TIME_WINDOW, T'=T//N_EEG_TIME_WINDOW)
+            T, F = eeg.shape
+            assert T % N_EEG_TIME_WINDOW == 0
+
+            # Fill nan
+            nan_mask = np.isnan(eeg).any(1)
+            if not nan_mask.all():
+                fill = np.nanmean(eeg, axis=0)
+                eeg[nan_mask] = fill
             else:
-                sample_names.append(row[0])
-            data.append(row[(1 - options.nr):])
+                eeg[:] = 0
+            
+            # Get spectrogram
+            with threadpool_limits(limits=self.max_threads):
+                mel_spec = librosa.feature.melspectrogram(
+                    y=eeg.T, 
+                    sr=EED_SAMPLING_RATE_HZ, 
+                    hop_length=N_EEG_TIME_WINDOW, 
+                    n_fft=EEG_FFT_WINDOW_SIZE, 
+                    n_mels=N_EEG_TIME_WINDOW,
+                    fmax=20,
+                )
 
-    print(len(data), data[0])
-    try:
-        for i in range(len(data)):
-            data[i] = map(np.float32, data[i])
-        X = np.array(data, dtype=np.float32)  # Data matrix in numpy format
-    except:
-        raise ValueError("Incorrect data format.\nCheck that you've correctly specified options "
-                         "such as continuous or not, \nand if there is a header row or column.\n"
-                         "Run 'python gaussianize.py -h' option for help with options.")
-        traceback.print_exc(file=sys.stdout)
-        sys.exit()
+            # Truncate for alignment
+            mel_spec = mel_spec[:, :, :-1]
 
-    ks = []
-    for xi in X.T:
-        ks.append(kurtosis(xi))
-    print(np.mean(np.array(ks) > 1))
-    from matplotlib import pylab
-    pylab.hist(ks, bins=30)
-    pylab.xlabel('excess kurtosis')
-    pylab.savefig('excess_kurtoses_all.png')
-    pylab.clf()
-    pylab.hist([k for k in ks if k < 2], bins=30)
-    pylab.xlabel('excess kurtosis')
-    pylab.savefig('excess_kurtoses_near_zero.png')
-    print(np.argmax(ks))
-    pdict = {}
-    for k in np.argsort(- np.array(ks))[:50]:
-        pylab.clf()
-        p = np.argmax(X[:, k])
-        pdict[p] = pdict.get(p, 0) + 1
-        pylab.hist(X[:, k], bins=30)
-        pylab.xlabel(variable_names[k])
-        pylab.ylabel('Histogram of patients')
-        pylab.savefig('high_kurtosis/'+variable_names[k] + '.png')
-    print(pdict)  # 203, 140 appear three times.
-    sys.exit()
-    out = Gaussianize(strategy=options.strategy)
-    y = out.fit_transform(X)
-    with open(options.output, 'w') as csvfile:
-        writer = csv.writer(csvfile, delimiter=options.delimiter)
-        if not options.nc:
-            writer.writerow([""] * (1 - options.nr) + variable_names)
-        for i, row in enumerate(y):
-            if not options.nr:
-                writer.writerow([sample_names[i]] + list(row))
-            else:
-                writer.writerow(row)
+            # Reshape to (T', K, F)
+            df = mel_spec.transpose([2, 1, 0])
 
-    if options.q:
-        print('Making qq plots')
-        prefix = options.output.split('.')[0]
-        if not os.path.exists(prefix+'_q'):
-            os.makedirs(prefix+'_q')
-        out.qqplot(X, prefix=prefix + '_q/q')
+        return df
