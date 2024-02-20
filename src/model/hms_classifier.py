@@ -42,6 +42,7 @@ class HmsEncoderLayer(nn.Module):
 
         self.norm_s_1 = nn.LayerNorm(embed_dim)
         self.norm_s_2 = nn.LayerNorm(embed_dim)
+        self.norm_s_3 = nn.LayerNorm(embed_dim)
 
         # E
         self.self_attn_e = nn.MultiheadAttention(
@@ -62,6 +63,7 @@ class HmsEncoderLayer(nn.Module):
 
         self.norm_e_1 = nn.LayerNorm(embed_dim)
         self.norm_e_2 = nn.LayerNorm(embed_dim)
+        self.norm_e_3 = nn.LayerNorm(embed_dim)
 
         # Common
         self.dropout = nn.Dropout(dropout)
@@ -77,6 +79,7 @@ class HmsEncoderLayer(nn.Module):
 
         # Cross
         if self.cheap_cross:
+            # Note: norm_*_2 not used
             class_token_s, x_s = x_s[:, 0:1, :], x_s[:, 1:, :]
             class_token_e, x_e = x_e[:, 0:1, :], x_e[:, 1:, :]
 
@@ -95,8 +98,8 @@ class HmsEncoderLayer(nn.Module):
         x_s, x_e = x_s_after_cross, x_e_after_cross
 
         # Mlp
-        x_s = self.norm_s_2(x_s + self.mlp_s(x_s))
-        x_e = self.norm_e_2(x_e + self.mlp_e(x_e))
+        x_s = self.norm_s_3(x_s + self.mlp_s(x_s))
+        x_e = self.norm_e_3(x_e + self.mlp_e(x_e))
 
         x = x_s, x_e
 
