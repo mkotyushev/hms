@@ -1,5 +1,6 @@
 import logging
 import torch
+import timm
 from lightning import LightningModule
 from typing import Any, Dict, Optional, Union, Literal
 from torch import Tensor
@@ -389,41 +390,40 @@ class BaseModule(LightningModule):
 class HmsModule(BaseModule):
     def __init__(
         self,
-        embed_dim=768,
-        num_heads=8,
-        dropout=0.1,
-        depth=8,
-        cheap_cross=False,
-        pool: Literal['cls', '10sec'] = 'cls',
+        model: Literal['hms_classifier', 'resnet18'] = 'hms_classifier',
+        model_kwargs=None,
         lr=None,
-        use: Literal['all', 'spectrogram', 'eeg'] = 'all',
         **base_kwargs,
     ):
         super().__init__(**base_kwargs)
         self.save_hyperparameters()
 
-        self.model = HmsClassifier(
-            n_classes=N_CLASSES,
-            input_dim_s=100,
-            num_patches_s=1200,
-            input_dim_e=200,
-            num_patches_e=1000,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=dropout,
-            depth=depth,
-            cheap_cross=cheap_cross,
-            pool=pool,
-        )
+        if model_kwargs is None:
+            model_kwargs = dict()
+
+        if model == 'hms_classifier':
+            self.model = HmsClassifier(
+                n_classes=N_CLASSES,
+                input_dim_s=100,
+                num_patches_s=1200,
+                input_dim_e=200,
+                num_patches_e=1000,
+                **model_kwargs,
+            )
+        else:
+            self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
         
     def compute_loss_preds(self, batch, *args, **kwargs):
-        if self.hparams.use == 'all':
-            x_s, x_e = batch['spectrogram'], batch['eeg']
-        elif self.hparams.use == 'spectrogram':
-            x_s, x_e = batch['spectrogram'], None
-        elif self.hparams.use == 'eeg':
-            x_s, x_e = None, batch['eeg']
-        preds = self.model(x_s, x_e)
+        if self.hparams.model == 'hms_classifier':
+            if self.hparams.use == 'all':
+                x_s, x_e = batch['spectrogram'], batch['eeg']
+            elif self.hparams.use == 'spectrogram':
+                x_s, x_e = batch['spectrogram'], None
+            elif self.hparams.use == 'eeg':
+                x_s, x_e = None, batch['eeg']
+            preds = self.model(x_s, x_e)
+        else:
+            preds = self.model(batch['image'])
         target = batch['label'] / batch['label'].sum(1)[:, None]
         log_preds = F.log_softmax(preds, dim=1)
         losses = {

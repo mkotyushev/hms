@@ -17,6 +17,7 @@ class HmsDataset:
         df_meta: pd.DataFrame, 
         eeg_dirpath: Path, 
         spectrogram_dirpath: Path, 
+        eeg_spectrograms: Dict[str, np.ndarray] | None = None, 
         pre_transform: Callable | None = None,
         transform: Callable | None = None,
         cache: Dict[Path, pd.DataFrame] | None = None,
@@ -24,6 +25,7 @@ class HmsDataset:
         self.df_meta = df_meta
         self.eeg_dirpath = eeg_dirpath
         self.spectrogram_dirpath = spectrogram_dirpath
+        self.eeg_spectrograms = eeg_spectrograms
         self.pre_transform = pre_transform
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
@@ -47,8 +49,12 @@ class HmsDataset:
         else:
             eeg = df_eeg_or_eeg[EEG_COLS_ORDERED].values
         df_spectrogram = self.read_parquet(self.spectrogram_dirpath / f'{spectrogram_id}.parquet')
+        eeg_spectrogram = None
+        if self.eeg_spectrograms is not None:
+            eeg_spectrogram = self.eeg_spectrograms[eeg_id]
         item = {
             'eeg': eeg,
+            'eeg_spectrogram': eeg_spectrogram,
             'spectrogram': df_spectrogram[SPECTROGRAM_COLS_ORDERED].values,
             'spectrogram_time': df_spectrogram['time'].values,
             'label': df[LABEL_COLS_ORDERED].values,

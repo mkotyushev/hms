@@ -1,3 +1,7 @@
+import matplotlib
+matplotlib.use('Agg')
+import io
+import matplotlib.pyplot as plt
 import math
 import numpy as np
 import random
@@ -11,6 +15,7 @@ from .constants import (
     LABEL_COLS_ORDERED,
     N_SPECTROGRAM_TILES,
     N_EEG_TIME_WINDOW,
+    EEG_DIFF_COL_INDICES,
 )
 
 
@@ -307,4 +312,74 @@ class FillNan:
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg
         
+        return item
+
+
+class ToImage:
+    def __call__(self, **item):
+        fig = plt.figure(figsize=(6.4, 6.4), dpi=100)
+        gs = fig.add_gridspec(len(EEG_DIFF_COL_INDICES) * 2, 2)
+
+        # 10 minutes spectrogram
+        ax_spectrogram = fig.add_subplot(gs[:len(EEG_DIFF_COL_INDICES), 1])
+        ax_spectrogram.axis('off')
+
+        y = item['spectrogram']
+        y = np.log10(y + 1e-6)
+        y = (y - y.min()) / (y.max() - y.min())
+
+        ax_spectrogram.imshow(
+            y,
+            vmin=0,
+            vmax=1,
+            aspect="auto",
+            cmap='gray',
+        )
+
+        # 50 seconds EEG spectrogram
+        ax_spectrogram_50s = fig.add_subplot(gs[len(EEG_DIFF_COL_INDICES):, :])
+        ax_spectrogram_50s.axis('off')
+
+        y = item['eeg_spectrogram']
+        y = (y - y.min()) / (y.max() - y.min())
+        y = y.transpose(1, 2, 0).reshape(256, -1)
+
+        ax_spectrogram_50s.imshow(
+            y,
+            vmin=0,
+            vmax=1,
+            aspect="auto",
+            cmap='gray',
+        )
+
+        # 10 seconds EEG raw
+        eeg = item['eeg']
+        subdf = eeg[4000:6000]
+        for i, cols in enumerate(EEG_DIFF_COL_INDICES):
+            ax = fig.add_subplot(gs[i, 0])
+            if len(cols) == 1:
+                y = subdf[cols[0]]
+                label = f'{cols[0]}'
+            else:
+                y = subdf[cols[0]] - subdf[cols[1]]
+                label = f'{cols[0]} - {cols[1]}'
+            y = (y - y.min()) / (y.max() - y.min() + 1e-6)
+            ax.plot(y, label=label, linewidth=0.5, color='k')
+
+            ax.set_xlim((0, 2000))
+            ax.axis('off')
+
+        fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+
+        io_buf = io.BytesIO()
+        fig.savefig(io_buf, format='raw', dpi=100)
+        io_buf.seek(0)
+        img_arr = np.reshape(np.frombuffer(io_buf.getvalue(), dtype=np.uint8),
+                            newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
+        img_arr = img_arr.transpose(2, 0, 1)
+        img_arr = img_arr[0][None, ...]
+        io_buf.close()
+        plt.close(fig)
+    
+        item['image'] = img_arr
         return item

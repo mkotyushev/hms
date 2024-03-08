@@ -60,13 +60,15 @@ trainer:
 model:
   class_path: src.model.modules.HmsModule
   init_args:
-    embed_dim: 128
-    num_heads: 4
-    dropout: 0.1
-    depth: 2
-    cheap_cross: false
-    pool: cls
-    use: all
+    model: hms_classifier
+    model_kwargs:
+      embed_dim: 128
+      num_heads: 4
+      dropout: 0.1
+      depth: 2
+      cheap_cross: false
+      pool: cls
+      use: all
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:

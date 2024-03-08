@@ -14,7 +14,7 @@ from src.data.dataset import HmsDataset
 from src.data.transforms import (
     RandomSubrecord,
     CenterSubrecord,
-    ReshapeToPatches,
+    ToImage,
     Compose,
     Normalize,
 )
@@ -114,7 +114,7 @@ class HmsDatamodule(LightningDataModule):
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
-                ReshapeToPatches(),
+                ToImage(),
             ]
         )
         self.val_transform = self.test_transform = Compose(
@@ -128,7 +128,7 @@ class HmsDatamodule(LightningDataModule):
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
-                ReshapeToPatches(),
+                ToImage(),
             ]
         )
 
@@ -240,11 +240,15 @@ class HmsDatamodule(LightningDataModule):
             max_threads=1 if self.hparams.cache_dir is None else 11
         )
 
+        # Load pre-computed EEG spectrograms
+        eeg_spectrograms = np.load(self.hparams.dataset_dirpath / 'eeg_specs.npy', allow_pickle=True).item()
+
         if self.train_dataset is None:
             self.train_dataset = HmsDataset(
                 df_meta_train,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
                 transform=None,  # Here transform depend on the dataset, so will be set later
                 cache=self.cache,
@@ -257,6 +261,7 @@ class HmsDatamodule(LightningDataModule):
                 df_meta_val,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
                 transform=self.val_transform,
                 cache=self.cache,
