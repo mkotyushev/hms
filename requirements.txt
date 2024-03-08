@@ -12,3 +12,5 @@ jsonargparse[signatures]==4.27.5
 wandb==0.16.3
 librosa==0.10.1
 ipympl==0.9.3
+justpyplot==0.1.1
+perf_timer==0.2.2

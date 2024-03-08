@@ -1,11 +1,9 @@
-import matplotlib
-matplotlib.use('Agg')
-import io
-import matplotlib.pyplot as plt
+import cv2
 import math
 import numpy as np
 import random
 from copy import deepcopy
+from justpyplot import justpyplot as jplt
 from typing import Dict, List, Callable
 
 from .constants import (
@@ -315,71 +313,56 @@ class FillNan:
         return item
 
 
+def plot_to_array(y, img_array):
+    x = (np.arange(0, y.shape[0]) / y.shape[0] * img_array.shape[1]).astype(int)
+    y = (-y * img_array.shape[0]).astype(int) + img_array.shape[0]
+    img_array = jplt.vectorized_lines_with_thickness(
+        y[:-1], 
+        x[:-1], 
+        y[1:], 
+        x[1:],
+        img_array,
+        clr=(0, 0, 0, 0), 
+        thickness=1
+    )
+
+
 class ToImage:
     def __call__(self, **item):
-        fig = plt.figure(figsize=(6.4, 6.4), dpi=100)
-        gs = fig.add_gridspec(len(EEG_DIFF_COL_INDICES) * 2, 2)
+        # TODO: add adaptive image size
+        img_array = np.full((16 * len(EEG_DIFF_COL_INDICES), 320, 4), fill_value=255, dtype=np.uint8)
 
-        # 10 minutes spectrogram
-        ax_spectrogram = fig.add_subplot(gs[:len(EEG_DIFF_COL_INDICES), 1])
-        ax_spectrogram.axis('off')
-
-        y = item['spectrogram']
-        y = np.log10(y + 1e-6)
-        y = (y - y.min()) / (y.max() - y.min())
-
-        ax_spectrogram.imshow(
-            y,
-            vmin=0,
-            vmax=1,
-            aspect="auto",
-            cmap='gray',
-        )
-
-        # 50 seconds EEG spectrogram
-        ax_spectrogram_50s = fig.add_subplot(gs[len(EEG_DIFF_COL_INDICES):, :])
-        ax_spectrogram_50s.axis('off')
-
-        y = item['eeg_spectrogram']
-        y = (y - y.min()) / (y.max() - y.min())
-        y = y.transpose(1, 2, 0).reshape(256, -1)
-
-        ax_spectrogram_50s.imshow(
-            y,
-            vmin=0,
-            vmax=1,
-            aspect="auto",
-            cmap='gray',
-        )
-
-        # 10 seconds EEG raw
         eeg = item['eeg']
         subdf = eeg[4000:6000]
         for i, cols in enumerate(EEG_DIFF_COL_INDICES):
-            ax = fig.add_subplot(gs[i, 0])
             if len(cols) == 1:
                 y = subdf[cols[0]]
-                label = f'{cols[0]}'
             else:
                 y = subdf[cols[0]] - subdf[cols[1]]
-                label = f'{cols[0]} - {cols[1]}'
+            y[np.isnan(y)] = 0
             y = (y - y.min()) / (y.max() - y.min() + 1e-6)
-            ax.plot(y, label=label, linewidth=0.5, color='k')
+            # TODO: fix bad lineplot appearance due to naive interpolation
+            plot_to_array(y, img_array[16 * i:16 * i + 16, :320])
 
-            ax.set_xlim((0, 2000))
-            ax.axis('off')
+        img = np.zeros((640, 640), dtype=np.uint8)
+        img[:16 * len(EEG_DIFF_COL_INDICES), :320] = img_array[..., 3]
 
-        fig.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+        # 10 minutes spectrogram
+        y = item['spectrogram']
+        y = np.log10(y + 1e-6)
+        y[np.isnan(y)] = 0
+        y = (y - y.min()) / (y.max() - y.min() + 1e-6)
+        y = (y * 255).astype(np.uint8)
+        y = cv2.resize(y, (320, 320))
+        img[:320, 320:] = y
 
-        io_buf = io.BytesIO()
-        fig.savefig(io_buf, format='raw', dpi=100)
-        io_buf.seek(0)
-        img_arr = np.reshape(np.frombuffer(io_buf.getvalue(), dtype=np.uint8),
-                            newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
-        img_arr = img_arr.transpose(2, 0, 1)
-        img_arr = img_arr[0][None, ...]
-        io_buf.close()
-        plt.close(fig)
+        # 50 seconds EEG spectrogram
+        y = item['eeg_spectrogram']
+        y = (y - y.min()) / (y.max() - y.min() + 1e-6)
+        y = y.transpose(1, 2, 0).reshape(256, -1)
+        y = (y * 255).astype(np.uint8)
+        y = cv2.resize(y, (640, 320))
+        img[320:, :] = y
     
-        item['image'] = img_arr
+        item['image'] = img[None, ...] / 255.0
         return item
