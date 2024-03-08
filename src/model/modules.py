@@ -390,7 +390,7 @@ class BaseModule(LightningModule):
 class HmsModule(BaseModule):
     def __init__(
         self,
-        model: Literal['hms_classifier', 'resnet18'] = 'hms_classifier',
+        model: str = 'hms_classifier',
         model_kwargs=None,
         lr=None,
         **base_kwargs,
