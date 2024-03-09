@@ -11,7 +11,7 @@ from lightning.pytorch.utilities import grad_norm
 
 from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
-from src.utils.utils import state_norm
+from src.utils.utils import state_norm, patch_first_conv
 from src.utils.mechanic import mechanize
 
 
@@ -411,7 +411,9 @@ class HmsModule(BaseModule):
                 **model_kwargs,
             )
         else:
+            in_chans = model_kwargs.pop('in_chans', 3)
             self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
+            patch_first_conv(self.model, in_chans)
         
     def compute_loss_preds(self, batch, *args, **kwargs):
         if self.hparams.model == 'hms_classifier':
