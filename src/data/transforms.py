@@ -14,6 +14,7 @@ from .constants import (
     N_SPECTROGRAM_TILES,
     MEL_N_FFT,
     EEG_DIFF_COL_INDICES,
+    MEL_HOP_LENGTH,
 )
 
 
@@ -153,8 +154,17 @@ class Subrecord:
         spectrogram = spectrogram[spectrogram_time >= spectrogram_label_offset_seconds][:SPECTROGRAM_N_SAMPLES]
         spectrogram_time = spectrogram_time[spectrogram_time >= spectrogram_label_offset_seconds][:SPECTROGRAM_N_SAMPLES]
 
+        eeg_spectrogram = item['eeg_spectrogram']
+        if eeg_spectrogram is not None:
+            eeg_spectrogram_start_index = eeg_start_index // MEL_HOP_LENGTH
+            spectrogram_for_50_sec_len = (EED_N_SAMPLES - MEL_N_FFT) // MEL_HOP_LENGTH + 1
+            eeg_spectrogram_stop_index = eeg_spectrogram_start_index + spectrogram_for_50_sec_len
+            eeg_spectrogram = eeg_spectrogram[:, eeg_spectrogram_start_index:eeg_spectrogram_stop_index]
+            eeg_spectrogram = eeg_spectrogram.astype(np.float32) / 255.0
+
         # Put back to item
         item['eeg'] = eeg
+        item['eeg_spectrogram'] = eeg_spectrogram
         item['spectrogram'] = spectrogram
         item['spectrogram_time'] = spectrogram_time
         item['label'] = subrecord[LABEL_COLS_ORDERED].values
@@ -364,7 +374,7 @@ class ToImage:
         min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
         y = np.clip(y, min_, max_)
         y = (y - min_) / (max_ - min_ + 1e-6)
-        y = y.transpose(1, 2, 0).reshape(256, -1)
+        y = y.transpose(1, 2, 0).reshape(-1, y.shape[0] * y.shape[2])
         y = cv2.resize(y, (640, 320))
         img[320:, :] = y
     
