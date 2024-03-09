@@ -12,7 +12,7 @@ from .constants import (
     EED_SAMPLING_RATE_HZ, 
     LABEL_COLS_ORDERED,
     N_SPECTROGRAM_TILES,
-    N_EEG_TIME_WINDOW,
+    MEL_N_FFT,
     EEG_DIFF_COL_INDICES,
 )
 
@@ -143,8 +143,8 @@ class Subrecord:
             eeg = eeg[eeg_start_index:eeg_stop_index]
         else:
             assert eeg.ndim == 3
-            eeg_start_index = int(subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ / N_EEG_TIME_WINDOW)
-            eeg_stop_index = eeg_start_index + EED_N_SAMPLES // N_EEG_TIME_WINDOW
+            eeg_start_index = int(subrecord['eeg_label_offset_seconds'] * EED_SAMPLING_RATE_HZ / MEL_N_FFT)
+            eeg_stop_index = eeg_start_index + EED_N_SAMPLES // MEL_N_FFT
             eeg = eeg[eeg_start_index:eeg_stop_index]
 
         spectrogram = item['spectrogram']
@@ -227,9 +227,9 @@ class ReshapeToPatches:
         if eeg.ndim == 2:
             # e: (T=10000, F=20) -> (T=50, K=200, F=20)
             T, F = eeg.shape
-            assert T % N_EEG_TIME_WINDOW == 0
-            T_new = T // N_EEG_TIME_WINDOW
-            eeg = eeg.reshape(T_new, N_EEG_TIME_WINDOW, F)
+            assert T % MEL_N_FFT == 0
+            T_new = T // MEL_N_FFT
+            eeg = eeg.reshape(T_new, MEL_N_FFT, F)
         else:
             # Already (T, K, F)
             assert eeg.ndim == 3

@@ -24,9 +24,8 @@ from scipy import stats
 
 from .constants import (
     EED_SAMPLING_RATE_HZ, 
-    N_EEG_TIME_WINDOW,
     EEG_COLS_ORDERED,
-    EEG_FFT_WINDOW_SIZE,
+    MEL_N_FFT,
     EEG_GAUSSIANIZE_COEFS_TRAIN,
 )
 
@@ -290,9 +289,9 @@ class Pretransform:
             eeg = df[EEG_COLS_ORDERED].values
 
             # https://www.kaggle.com/code/cdeotte/how-to-make-spectrogram-from-eeg
-            # (T, F=20) -> (F=20, K=N_EEG_TIME_WINDOW, T'=T//N_EEG_TIME_WINDOW)
+            # (T, F=20) -> (F=20, K=MEL_N_FFT, T'=T//MEL_N_FFT)
             T, F = eeg.shape
-            assert T % N_EEG_TIME_WINDOW == 0
+            assert T % MEL_N_FFT == 0
 
             # Fill nan
             nan_mask = np.isnan(eeg).any(1)
@@ -307,9 +306,9 @@ class Pretransform:
                 mel_spec = librosa.feature.melspectrogram(
                     y=eeg.T, 
                     sr=EED_SAMPLING_RATE_HZ, 
-                    hop_length=N_EEG_TIME_WINDOW, 
-                    n_fft=EEG_FFT_WINDOW_SIZE, 
-                    n_mels=N_EEG_TIME_WINDOW,
+                    hop_length=MEL_N_FFT, 
+                    n_fft=MEL_N_FFT, 
+                    n_mels=MEL_N_FFT,
                     fmax=20,
                 )
 

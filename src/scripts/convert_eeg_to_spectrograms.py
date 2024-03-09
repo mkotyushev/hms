@@ -10,8 +10,9 @@ from tqdm import tqdm
 
 from src.data.constants import (
     EED_SAMPLING_RATE_HZ,
-    N_EEG_TIME_WINDOW,
-    EEG_FFT_WINDOW_SIZE,
+    MEL_N_FFT,
+    MEL_HOP_LENGTH,
+    MEL_N_MELS
 )
 
 
@@ -62,16 +63,13 @@ def spectrograms_from_eeg(eeg):
     logger.debug(f'eeg.shape: {eeg.shape}')
 
     # VARIABLE TO HOLD SPECTROGRAM
-    hop_length = 40
-    n_fft = 1000
-    n_mels = 128
-    assert (eeg.shape[0] - n_fft) % hop_length == 0, \
-        f'Invalid hop_length: {hop_length} and n_fft: {n_fft} ' \
+    assert (eeg.shape[0] - MEL_N_FFT) % MEL_HOP_LENGTH == 0, \
+        f'Invalid hop_length: {MEL_HOP_LENGTH} and n_fft: {MEL_N_FFT} ' \
         f'for eeg.shape[0]: {eeg.shape[0]}'
     img = np.zeros(
         (
-            n_mels, 
-            (eeg.shape[0] - n_fft) // hop_length + 1, 
+            MEL_N_MELS, 
+            (eeg.shape[0] - MEL_N_FFT) // MEL_HOP_LENGTH + 1, 
             4
         ), 
         dtype=np.float32
@@ -99,9 +97,9 @@ def spectrograms_from_eeg(eeg):
             mel_spec = librosa.feature.melspectrogram(
                 y=x, 
                 sr=EED_SAMPLING_RATE_HZ, 
-                hop_length=hop_length, 
-                n_fft=n_fft, 
-                n_mels=n_mels,
+                hop_length=MEL_HOP_LENGTH, 
+                n_fft=MEL_N_FFT, 
+                n_mels=MEL_N_MELS,
                 fmin=0,
                 fmax=20,
                 # i-th spectrogram starts at eeg[i*hop_length]
