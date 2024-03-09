@@ -13,6 +13,7 @@ from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
 from src.utils.utils import state_norm, patch_first_conv
 from src.utils.mechanic import mechanize
+from src.data.constants import LABEL_COLS_ORDERED
 
 
 logger = logging.getLogger(__name__)
@@ -392,6 +393,7 @@ class HmsModule(BaseModule):
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
+        weight_by_n_voters: bool = False,
         lr=None,
         **base_kwargs,
     ):
@@ -428,13 +430,22 @@ class HmsModule(BaseModule):
             preds = self.model(batch['image'])
         target = batch['label'] / batch['label'].sum(1)[:, None]
         log_preds = F.log_softmax(preds, dim=1)
+        kld = F.kl_div(
+            log_preds, 
+            target,
+            log_target=False,
+            reduction='none',
+        ).sum(1)
+
+        if self.hparams.weight_by_n_voters:
+            n_voters = torch.from_numpy(batch['meta'][LABEL_COLS_ORDERED].values.sum(1)).to(kld.device).float()
+            kld = (kld * n_voters).sum() / n_voters.sum()
+        else:
+            # Same as with reduction='batchmean'
+            kld = kld.sum() / kld.shape[0]
+
         losses = {
-            'kld': F.kl_div(
-                log_preds, 
-                target,
-                log_target=False,
-                reduction='batchmean',
-            )
+            'kld': kld
         }
         return sum(losses.values()), losses, log_preds
 
