@@ -343,7 +343,7 @@ class ToImage:
         img_array = np.full((16 * len(EEG_DIFF_COL_INDICES), 320, 4), fill_value=255, dtype=np.uint8)
 
         eeg = item['eeg']
-        subdf = eeg[4000:6000]
+        subdf = eeg[4000:6000].T
         for i, cols in enumerate(EEG_DIFF_COL_INDICES):
             if len(cols) == 1:
                 y = subdf[cols[0]]
