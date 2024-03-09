@@ -340,29 +340,33 @@ class ToImage:
             else:
                 y = subdf[cols[0]] - subdf[cols[1]]
             y[np.isnan(y)] = 0
-            y = (y - y.min()) / (y.max() - y.min() + 1e-6)
+            min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
+            y = np.clip(y, min_, max_)
+            y = (y - min_) / (max_ - min_ + 1e-6)
             # TODO: fix bad lineplot appearance due to naive interpolation
             plot_to_array(y, img_array[16 * i:16 * i + 16, :320])
 
-        img = np.zeros((640, 640), dtype=np.uint8)
-        img[:16 * len(EEG_DIFF_COL_INDICES), :320] = img_array[..., 3]
+        img = np.zeros((640, 640), dtype=np.float32)
+        img[:16 * len(EEG_DIFF_COL_INDICES), :320] = img_array[..., 3] / 255.0
 
         # 10 minutes spectrogram
         y = item['spectrogram']
         y = np.log10(y + 1e-6)
         y[np.isnan(y)] = 0
-        y = (y - y.min()) / (y.max() - y.min() + 1e-6)
-        y = (y * 255).astype(np.uint8)
+        min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
+        y = np.clip(y, min_, max_)
+        y = (y - min_) / (max_ - min_ + 1e-6)
         y = cv2.resize(y, (320, 320))
         img[:320, 320:] = y
 
         # 50 seconds EEG spectrogram
         y = item['eeg_spectrogram']
-        y = (y - y.min()) / (y.max() - y.min() + 1e-6)
+        min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
+        y = np.clip(y, min_, max_)
+        y = (y - min_) / (max_ - min_ + 1e-6)
         y = y.transpose(1, 2, 0).reshape(256, -1)
-        y = (y * 255).astype(np.uint8)
         y = cv2.resize(y, (640, 320))
         img[320:, :] = y
     
-        item['image'] = img[None, ...] / 255.0
+        item['image'] = img[None, ...]
         return item
