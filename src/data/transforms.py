@@ -177,7 +177,7 @@ class RandomSubrecord(Subrecord):
     def __init__(self, mode='discrete'):
         self.mode = mode
     
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         if self.mode == 'discrete':
             # Sample single sub-record
             subrecord = item['meta'].sample().squeeze()
@@ -211,7 +211,7 @@ class RandomSubrecord(Subrecord):
 
 
 class CenterSubrecord(Subrecord):
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         # Get center sub-record
         subrecord = item['meta'].iloc[len(item['meta'].index) // 2]
         
@@ -222,7 +222,7 @@ class CenterSubrecord(Subrecord):
 
 
 class ReshapeToPatches:
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         # s: (T=300, F=400) -> (K=4, T=300, F=100)
         spectrogram = item['spectrogram']
         T, F = spectrogram.shape
@@ -254,7 +254,7 @@ class Compose:
     def __init__(self, transforms: List[Callable]):
         self.transforms = transforms
 
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         for transform in self.transforms:
             item = transform(**item)
         return item
@@ -277,7 +277,7 @@ class Normalize:
         self.eeg_strategy = eeg_strategy
         self.spectrogram_strategy = spectrogram_strategy
 
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         # s: (T=10000, F=20)
         spectrogram = item['spectrogram']
         if self.spectrogram_strategy == 'meanstd':
@@ -310,7 +310,7 @@ class FillNan:
         self.eeg_fill = eeg_fill
         self.spectrogram_fill = spectrogram_fill
 
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         spectrogram = item['spectrogram']
         spectrogram[np.isnan(spectrogram).any(1)] = self.spectrogram_fill
 
@@ -338,7 +338,7 @@ def plot_to_array(y, img_array):
 
 
 class ToImage:
-    def __call__(self, **item):
+    def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
         img_array = np.full((16 * len(EEG_DIFF_COL_INDICES), 320, 4), fill_value=255, dtype=np.uint8)
 
@@ -378,5 +378,10 @@ class ToImage:
         y = cv2.resize(y, (640, 320))
         img[320:, :] = y
     
-        item['image'] = img[None, ...]
+        item['image'] = img
+        return item
+
+class Unsqueeze:
+    def __call__(self, *args, force_apply: bool = False, **item):
+        item['image'] = np.expand_dims(item['image'], axis=0)
         return item

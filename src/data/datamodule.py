@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import pandas as pd
 import yaml
+import albumentations as A
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 from lightning import LightningDataModule
@@ -15,8 +16,8 @@ from src.data.transforms import (
     RandomSubrecord,
     CenterSubrecord,
     ToImage,
-    Compose,
     Normalize,
+    Unsqueeze,
 )
 from src.utils.utils import (
     CacheDictWithSave,
@@ -103,7 +104,7 @@ class HmsDatamodule(LightningDataModule):
             f'spectrogram_std: {spectrogram_std}'
         )
 
-        self.train_transform = Compose(
+        self.train_transform = A.Compose(
             [
                 RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 Normalize(
@@ -115,9 +116,27 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
                 ToImage(),
+                A.RandomBrightnessContrast(p=0.5, brightness_limit=0.1, contrast_limit=0.1),
+                A.OneOf(
+                    [
+                        A.GaussNoise(var_limit=[0.1, 0.3]),
+                        A.GaussianBlur(),
+                        A.MotionBlur(),
+                    ], 
+                    p=0.4
+                ),
+                # A.GridDistortion(num_steps=5, distort_limit=0.3, p=0.5),
+                A.CoarseDropout(
+                    max_holes=5, 
+                    max_width=64, 
+                    max_height=64, 
+                    mask_fill_value=0, 
+                    p=0.5,
+                ),
+                Unsqueeze(),
             ]
         )
-        self.val_transform = self.test_transform = Compose(
+        self.val_transform = self.test_transform = A.Compose(
             [
                 CenterSubrecord(),
                 Normalize(
@@ -129,6 +148,7 @@ class HmsDatamodule(LightningDataModule):
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
                 ToImage(),
+                Unsqueeze(),
             ]
         )
 
