@@ -1,0 +1,18 @@
+model:
+  class_path: src.model.modules.HmsModule
+  init_args:
+    model: tiny_vit_21m_512.dist_in22k_ft_in1k
+    model_kwargs: 
+      pretrained: true
+      in_chans: 1
+data:
+  class_path: src.data.datamodule.HmsDatamodule
+  init_args:
+    load_kwargs:
+      gaussianize_mode: null
+      do_mel_eeg: false
+      do_clip_eeg: false
+    eeg_norm_strategy: null
+    spectrogram_norm_strategy: null
+    cache_dir: /workspace/data_external/.cache_img
+    batch_size: 24
