@@ -230,14 +230,18 @@ class HmsDatamodule(LightningDataModule):
         expert_consensus_col = df[LABEL_COLS_ORDERED].idxmax(axis=1)
         confusion_matrix = []
         for col in LABEL_COLS_ORDERED:
-            s = df[expert_consensus_col == col][LABEL_COLS_ORDERED].sum(axis=0)
+            s = (
+                df[expert_consensus_col == col][LABEL_COLS_ORDERED].values * 
+                df[expert_consensus_col == col]['n_voters'].values[:, None]
+            ).sum(axis=0)
             s = s / s.sum()
-            s = s[LABEL_COLS_ORDERED]
             confusion_matrix.append(s)
-        confusion_matrix = pd.concat(confusion_matrix, axis=1)
-        confusion_matrix.columns = LABEL_COLS_ORDERED
-        confusion_matrix = confusion_matrix.T
-        confusion_matrix.columns = [f'confused_w_{c}' for c in LABEL_COLS_ORDERED]
+        confusion_matrix = pd.DataFrame(
+            confusion_matrix,
+            columns=[f'confused_w_{c}' for c in LABEL_COLS_ORDERED],
+            index=LABEL_COLS_ORDERED,
+        )
+        assert np.allclose(confusion_matrix.sum(axis=1).values, 1)
         return confusion_matrix
 
     def apply_label_smoothing(self, df):
