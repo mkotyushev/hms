@@ -418,6 +418,8 @@ class HmsModule(BaseModule):
             patch_first_conv(self.model, in_chans)
         
     def compute_loss_preds(self, batch, *args, **kwargs):
+        weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
+
         if self.hparams.model == 'hms_classifier':
             if self.hparams.use == 'all':
                 x_s, x_e = batch['spectrogram'], batch['eeg']
@@ -437,7 +439,7 @@ class HmsModule(BaseModule):
             reduction='none',
         ).sum(1)
 
-        if self.hparams.weight_by_n_voters:
+        if weight_by_n_voters:
             n_voters = torch.from_numpy(batch['meta'][LABEL_COLS_ORDERED].values.sum(1)).to(kld.device).float()
             kld = (kld * n_voters).sum() / n_voters.sum()
         else:
@@ -448,6 +450,15 @@ class HmsModule(BaseModule):
             'kld': kld
         }
         return sum(losses.values()), losses, log_preds
+
+    def training_step(self, batch, batch_idx, **kwargs):
+        return super().training_step(batch, batch_idx, **{**kwargs, 'weight_by_n_voters': self.hparams.weight_by_n_voters})
+    
+    def validation_step(self, batch: Tensor, batch_idx: int, dataloader_idx: Optional[int] = None, **kwargs) -> Tensor:
+        return super().validation_step(batch, batch_idx, dataloader_idx, **{**kwargs, 'weight_by_n_voters': False})
+    
+    def predict_step(self, batch: Tensor, batch_idx: int, dataloader_idx: Optional[int] = None, **kwargs) -> Tensor:
+        return super().predict_step(batch, batch_idx, dataloader_idx, **{**kwargs, 'weight_by_n_voters': False})
 
     def update_metrics(self, span, preds, batch):
         """Update train metrics."""
