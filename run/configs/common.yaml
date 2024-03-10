@@ -70,6 +70,7 @@ model:
       pool: cls
       use: all
     weight_by_n_voters: false
+    label_smoothing: false
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:

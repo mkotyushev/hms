@@ -13,7 +13,7 @@ from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
 from src.utils.utils import state_norm, patch_first_conv
 from src.utils.mechanic import mechanize
-from src.data.constants import LABEL_COLS_ORDERED
+from src.data.constants import LABEL_COLS_ORDERED, CONFUSION_MATRIX
 
 
 logger = logging.getLogger(__name__)
@@ -394,6 +394,7 @@ class HmsModule(BaseModule):
         model: str = 'hms_classifier',
         model_kwargs=None,
         weight_by_n_voters: bool = False,
+        label_smoothing: bool = False,
         lr=None,
         **base_kwargs,
     ):
@@ -419,6 +420,7 @@ class HmsModule(BaseModule):
         
     def compute_loss_preds(self, batch, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
+        label_smoothing = kwargs.get('label_smoothing', False)
 
         if self.hparams.model == 'hms_classifier':
             if self.hparams.use == 'all':
@@ -431,6 +433,8 @@ class HmsModule(BaseModule):
         else:
             preds = self.model(batch['image'])
         target = batch['label'] / batch['label'].sum(1)[:, None]
+        if label_smoothing:
+            target = target @ torch.from_numpy(CONFUSION_MATRIX).to(target.dtype).to(target.device)
         log_preds = F.log_softmax(preds, dim=1)
         kld = F.kl_div(
             log_preds, 
@@ -452,13 +456,11 @@ class HmsModule(BaseModule):
         return sum(losses.values()), losses, log_preds
 
     def training_step(self, batch, batch_idx, **kwargs):
-        return super().training_step(batch, batch_idx, **{**kwargs, 'weight_by_n_voters': self.hparams.weight_by_n_voters})
-    
-    def validation_step(self, batch: Tensor, batch_idx: int, dataloader_idx: Optional[int] = None, **kwargs) -> Tensor:
-        return super().validation_step(batch, batch_idx, dataloader_idx, **{**kwargs, 'weight_by_n_voters': False})
-    
-    def predict_step(self, batch: Tensor, batch_idx: int, dataloader_idx: Optional[int] = None, **kwargs) -> Tensor:
-        return super().predict_step(batch, batch_idx, dataloader_idx, **{**kwargs, 'weight_by_n_voters': False})
+        train_kwargs = {
+            'weight_by_n_voters': self.hparams.weight_by_n_voters,
+            'label_smoothing': self.hparams.label_smoothing,
+        }
+        return super().training_step(batch, batch_idx, **{**kwargs, **train_kwargs})
 
     def update_metrics(self, span, preds, batch):
         """Update train metrics."""
