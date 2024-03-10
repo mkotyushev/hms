@@ -13,7 +13,6 @@ from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
 from src.utils.utils import state_norm, patch_first_conv
 from src.utils.mechanic import mechanize
-from src.data.constants import LABEL_COLS_ORDERED, CONFUSION_MATRIX
 
 
 logger = logging.getLogger(__name__)

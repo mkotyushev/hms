@@ -288,7 +288,7 @@ class HmsDatamodule(LightningDataModule):
                 groups=df_meta['patient_id']
             )
         )[self.hparams.split_index]
-        df_meta_train, df_meta_val = df_meta.iloc[train_indices], df_meta.iloc[val_indices]
+        df_meta_train, df_meta_val = df_meta.iloc[train_indices].copy(), df_meta.iloc[val_indices].copy()
 
         # Apply label smoothing
         df_meta_train = self.apply_label_smoothing(df_meta_train)
