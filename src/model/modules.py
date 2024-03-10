@@ -394,7 +394,6 @@ class HmsModule(BaseModule):
         model: str = 'hms_classifier',
         model_kwargs=None,
         weight_by_n_voters: bool = False,
-        label_smoothing: bool = False,
         lr=None,
         **base_kwargs,
     ):
@@ -420,7 +419,6 @@ class HmsModule(BaseModule):
         
     def compute_loss_preds(self, batch, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
-        label_smoothing = kwargs.get('label_smoothing', False)
 
         if self.hparams.model == 'hms_classifier':
             if self.hparams.use == 'all':
@@ -432,9 +430,7 @@ class HmsModule(BaseModule):
             preds = self.model(x_s, x_e)
         else:
             preds = self.model(batch['image'])
-        target = batch['label'] / batch['label'].sum(1)[:, None]
-        if label_smoothing:
-            target = target @ torch.from_numpy(CONFUSION_MATRIX).to(target.dtype).to(target.device)
+        target = batch['label']
         log_preds = F.log_softmax(preds, dim=1)
         kld = F.kl_div(
             log_preds, 
@@ -444,7 +440,7 @@ class HmsModule(BaseModule):
         ).sum(1)
 
         if weight_by_n_voters:
-            n_voters = torch.from_numpy(batch['meta'][LABEL_COLS_ORDERED].values.sum(1)).to(kld.device).float()
+            n_voters = torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
             kld = (kld * n_voters).sum() / n_voters.sum()
         else:
             # Same as with reduction='batchmean'
@@ -458,7 +454,6 @@ class HmsModule(BaseModule):
     def training_step(self, batch, batch_idx, **kwargs):
         train_kwargs = {
             'weight_by_n_voters': self.hparams.weight_by_n_voters,
-            'label_smoothing': self.hparams.label_smoothing,
         }
         return super().training_step(batch, batch_idx, **{**kwargs, **train_kwargs})
 

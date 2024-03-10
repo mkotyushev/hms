@@ -70,7 +70,6 @@ model:
       pool: cls
       use: all
     weight_by_n_voters: false
-    label_smoothing: false
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:
@@ -109,6 +108,7 @@ data:
       do_clip_eeg: true
     eeg_norm_strategy: meanstd
     spectrogram_norm_strategy: log
+    label_smoothing: null
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8

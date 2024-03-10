@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import yaml
 import albumentations as A
+import torch
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 from lightning import LightningDataModule
@@ -19,6 +20,7 @@ from src.data.transforms import (
     Normalize,
     Unsqueeze,
 )
+from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
@@ -40,6 +42,7 @@ class HmsDatamodule(LightningDataModule):
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
+        label_smoothing: float | None = None,
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
@@ -212,7 +215,53 @@ class HmsDatamodule(LightningDataModule):
 
     def read_meta(self):
         df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
+
+        # Add n_voters column
+        df_meta['n_voters'] = df_meta[LABEL_COLS_ORDERED].sum(axis=1)
+
+        # Normalize the labels
+        df_meta[LABEL_COLS_ORDERED] = \
+            df_meta[LABEL_COLS_ORDERED].values / \
+            df_meta[LABEL_COLS_ORDERED].sum(axis=1).values[:, None]
+
         return df_meta
+
+    def build_confusion_matrix(self, df):
+        expert_consensus_col = df[LABEL_COLS_ORDERED].idxmax(axis=1)
+        confusion_matrix = []
+        for col in LABEL_COLS_ORDERED:
+            s = df[expert_consensus_col == col][LABEL_COLS_ORDERED].sum(axis=0)
+            s = s / s.sum()
+            s = s[LABEL_COLS_ORDERED]
+            confusion_matrix.append(s)
+        confusion_matrix = pd.concat(confusion_matrix, axis=1)
+        confusion_matrix.columns = [f'confused_w_{c}' for c in LABEL_COLS_ORDERED]
+        return confusion_matrix
+
+    def apply_label_smoothing(self, df):
+        if self.hparams.label_smoothing is None:
+            return df
+
+        # Only apply to the labels with the KL divergence > threshold
+        # The idea is from https://www.kaggle.com/competitions/
+        # hms-harmful-brain-activity-classification/discussion/477461
+        confusion_matrix = self.build_confusion_matrix(df)
+        labels = df[LABEL_COLS_ORDERED].values + 1e-5
+        df['kl'] = torch.nn.functional.kl_div(
+            torch.log(torch.tensor(labels)),
+            torch.tensor([1 / len(LABEL_COLS_ORDERED)] * len(LABEL_COLS_ORDERED)),
+            reduction='none'
+        ).sum(dim=1).numpy()
+        
+        df.loc[
+            df['kl'] > self.hparams.label_smoothing, 
+            LABEL_COLS_ORDERED
+        ] = df.loc[
+            df['kl'] > self.hparams.label_smoothing, 
+            LABEL_COLS_ORDERED
+        ].values @ confusion_matrix.values
+
+        return df
 
     def setup(self, stage: str = None) -> None:
         df_meta = self.read_meta()
@@ -240,6 +289,9 @@ class HmsDatamodule(LightningDataModule):
             )
         )[self.hparams.split_index]
         df_meta_train, df_meta_val = df_meta.iloc[train_indices], df_meta.iloc[val_indices]
+
+        # Apply label smoothing
+        df_meta_train = self.apply_label_smoothing(df_meta_train)
 
         # Build pre-transform
         self.pre_transform = Pretransform(
