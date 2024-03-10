@@ -42,7 +42,7 @@ class HmsDatamodule(LightningDataModule):
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
-        label_smoothing: float | None = None,
+        label_smoothing_n_voters: int | None = None,
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
@@ -227,12 +227,18 @@ class HmsDatamodule(LightningDataModule):
         return df_meta
 
     def build_confusion_matrix(self, df):
-        expert_consensus_col = df[LABEL_COLS_ORDERED].idxmax(axis=1)
+        expert_consensus_col = df[
+            df['n_voters'] > self.hparams.label_smoothing_n_voters
+        ][LABEL_COLS_ORDERED].idxmax(axis=1)
         confusion_matrix = []
         for col in LABEL_COLS_ORDERED:
+            mask = (
+                (df['n_voters'] > self.hparams.label_smoothing_n_voters) & 
+                (expert_consensus_col == col)
+            )
             s = (
-                df[expert_consensus_col == col][LABEL_COLS_ORDERED].values * 
-                df[expert_consensus_col == col]['n_voters'].values[:, None]
+                df[mask][LABEL_COLS_ORDERED].values * 
+                df[mask]['n_voters'].values[:, None]
             ).sum(axis=0)
             s = s / s.sum()
             confusion_matrix.append(s)
@@ -244,22 +250,16 @@ class HmsDatamodule(LightningDataModule):
         assert np.allclose(confusion_matrix.sum(axis=1).values, 1)
         return confusion_matrix
 
-    def apply_label_smoothing(self, df):
-        if self.hparams.label_smoothing is None:
+    def apply_label_smoothing_n_voters(self, df):
+        if self.hparams.label_smoothing_n_voters is None:
             return df
 
         # Only apply to the labels with the KL divergence > threshold
         # The idea is from https://www.kaggle.com/competitions/
         # hms-harmful-brain-activity-classification/discussion/477461
         confusion_matrix = self.build_confusion_matrix(df)
-        labels = df[LABEL_COLS_ORDERED].values + 1e-5
-        df['kl'] = torch.nn.functional.kl_div(
-            torch.log(torch.tensor(labels)),
-            torch.tensor([1 / len(LABEL_COLS_ORDERED)] * len(LABEL_COLS_ORDERED)),
-            reduction='none'
-        ).sum(dim=1).numpy()
-
-        mask = df['kl'] > self.hparams.label_smoothing
+        
+        mask = df['n_voters'] <= self.hparams.label_smoothing_n_voters
         logger.info(
             f'Applying label smoothing to '
             f'{mask.sum() / mask.shape[0]} share of train data'
@@ -302,7 +302,7 @@ class HmsDatamodule(LightningDataModule):
         df_meta_train, df_meta_val = df_meta.iloc[train_indices].copy(), df_meta.iloc[val_indices].copy()
 
         # Apply label smoothing
-        df_meta_train = self.apply_label_smoothing(df_meta_train)
+        df_meta_train = self.apply_label_smoothing_n_voters(df_meta_train)
 
         # Build pre-transform
         self.pre_transform = Pretransform(
