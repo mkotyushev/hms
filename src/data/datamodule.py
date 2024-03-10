@@ -235,6 +235,8 @@ class HmsDatamodule(LightningDataModule):
             s = s[LABEL_COLS_ORDERED]
             confusion_matrix.append(s)
         confusion_matrix = pd.concat(confusion_matrix, axis=1)
+        confusion_matrix.columns = LABEL_COLS_ORDERED
+        confusion_matrix = confusion_matrix.T
         confusion_matrix.columns = [f'confused_w_{c}' for c in LABEL_COLS_ORDERED]
         return confusion_matrix
 
