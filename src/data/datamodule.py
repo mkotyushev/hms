@@ -252,12 +252,17 @@ class HmsDatamodule(LightningDataModule):
             torch.tensor([1 / len(LABEL_COLS_ORDERED)] * len(LABEL_COLS_ORDERED)),
             reduction='none'
         ).sum(dim=1).numpy()
-        
+
+        mask = df['kl'] > self.hparams.label_smoothing
+        logger.info(
+            f'Applying label smoothing to '
+            f'{mask.sum() / mask.shape[0]} share of train data'
+        )
         df.loc[
-            df['kl'] > self.hparams.label_smoothing, 
+            mask, 
             LABEL_COLS_ORDERED
         ] = df.loc[
-            df['kl'] > self.hparams.label_smoothing, 
+            mask, 
             LABEL_COLS_ORDERED
         ].values @ confusion_matrix.values
 
