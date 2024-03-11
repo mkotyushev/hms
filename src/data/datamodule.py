@@ -43,6 +43,7 @@ class HmsDatamodule(LightningDataModule):
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         label_smoothing_n_voters: int | None = None,
+        drop_low_n_voters: Literal['train', 'val', 'all'] | None = None,
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
@@ -290,6 +291,10 @@ class HmsDatamodule(LightningDataModule):
             parquet_filepathes=parquet_filepathes,
         )
 
+        # Drop the rows with small number of voters: all
+        if self.hparams.drop_low_n_voters == 'all':
+            df_meta = df_meta[df_meta['n_voters'] > 7]
+
         # Split to train, val and test
         kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
         train_indices, val_indices = list(
@@ -303,6 +308,12 @@ class HmsDatamodule(LightningDataModule):
 
         # Apply label smoothing
         df_meta_train = self.apply_label_smoothing_n_voters(df_meta_train)
+
+        # Drop the rows with small number of : only for either train or val
+        if self.hparams.drop_low_n_voters == 'train':
+            df_meta_train = df_meta_train[df_meta_train['n_voters'] > 7]
+        elif self.hparams.drop_low_n_voters == 'val':
+            df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
 
         # Build pre-transform
         self.pre_transform = Pretransform(
