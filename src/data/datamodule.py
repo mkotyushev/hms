@@ -38,6 +38,7 @@ class HmsDatamodule(LightningDataModule):
         self,
         dataset_dirpath: Path,	
         split_index: int,
+        eeg_spectrograms_filepath: Path | None = None,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
@@ -55,6 +56,9 @@ class HmsDatamodule(LightningDataModule):
         super().__init__()
         if load_kwargs is None:
             load_kwargs = dict()
+
+        if eeg_spectrograms_filepath is None:
+            eeg_spectrograms_filepath = dataset_dirpath / 'eeg_specs.npy'
 
         self.save_hyperparameters()
 
@@ -339,7 +343,7 @@ class HmsDatamodule(LightningDataModule):
             )
 
             # Load pre-computed EEG spectrograms
-            eeg_spectrograms = np.load(self.hparams.dataset_dirpath / 'eeg_specs.npy', allow_pickle=True).item()
+            eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
 
             if self.train_dataset is None:
                 self.train_dataset = HmsDataset(
@@ -370,7 +374,7 @@ class HmsDatamodule(LightningDataModule):
             if self.test_transform is None:
                 self.build_transforms()
             # Load pre-computed EEG spectrograms
-            eeg_spectrograms = np.load(self.hparams.dataset_dirpath / 'eeg_specs.npy', allow_pickle=True).item()
+            eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
             df_meta_test = self.read_meta(test=True)
             self.test_dataset = HmsDataset(
                 df_meta_test,
