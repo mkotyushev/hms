@@ -215,8 +215,10 @@ class CenterSubrecord(Subrecord):
         subrecord = item['meta'].iloc[len(item['meta'].index) // 2]
 
         # Add fields missing in test
-        subrecord['eeg_label_offset_seconds'] = 0.0
-        subrecord['spectrogram_label_offset_seconds'] = 0.0
+        if 'eeg_label_offset_seconds' not in subrecord:
+            subrecord['eeg_label_offset_seconds'] = 0.0
+        if 'spectrogram_label_offset_seconds' not in subrecord:
+            subrecord['spectrogram_label_offset_seconds'] = 0.0
         
         # Select
         item = self._select_by_subrecord(subrecord, **item)
