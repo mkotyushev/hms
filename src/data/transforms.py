@@ -167,6 +167,9 @@ class Subrecord:
         item['eeg_spectrogram'] = eeg_spectrogram
         item['spectrogram'] = spectrogram
         item['spectrogram_time'] = spectrogram_time
+        if 'label' in item and item['label'] is not None:
+            item['label'] = subrecord[LABEL_COLS_ORDERED].values
+        item['label'] = subrecord[LABEL_COLS_ORDERED].values
         item['meta'] = subrecord
 
         return item
