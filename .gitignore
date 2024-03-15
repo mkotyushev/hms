@@ -3,5 +3,6 @@ lightning_logs/
 wandb/
 pipe/
 hms/
+packages/
 .cache/
 *.csv
