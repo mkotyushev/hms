@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from collections import defaultdict
 from typing import Dict, Optional, Union
 from lightning import Trainer
@@ -394,6 +395,7 @@ class HmsPredictionWriter(BasePredictionWriter):
     def write_on_batch_end(
         self, trainer, pl_module, prediction, batch_indices, batch, batch_idx, dataloader_idx
     ):
+        prediction = F.softmax(prediction, dim=1)
         self.preds['eeg_id'].append(batch['meta']['eeg_id'])
         self.preds['prediction'].append(prediction.detach().cpu().numpy())
 
