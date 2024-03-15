@@ -408,5 +408,8 @@ class HmsPredictionWriter(BasePredictionWriter):
         )
         df[LABEL_COLS_ORDERED] = np.concatenate(self.preds['prediction'], axis=0)
 
+        # Convert type
+        df['eeg_id'] = df['eeg_id'].astype(int)
+
         # Save
         df.to_csv(self.output_filepath, index=False)
