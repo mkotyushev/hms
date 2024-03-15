@@ -8,6 +8,9 @@ trainer:
     - class_path: lightning.pytorch.callbacks.LearningRateMonitor
       init_args:
         logging_interval: step
+    - class_path: src.utils.utils.HmsPredictionWriter
+      init_args:
+        output_filepath: ./submission.csv
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
         save_top_k: 1

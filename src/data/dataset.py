@@ -52,12 +52,17 @@ class HmsDataset:
         eeg_spectrogram = None
         if self.eeg_spectrograms is not None:
             eeg_spectrogram = self.eeg_spectrograms[eeg_id]
+
+        label = None
+        if LABEL_COLS_ORDERED[0] in df.columns:
+            label = df[LABEL_COLS_ORDERED].values
+
         item = {
             'eeg': eeg,
             'eeg_spectrogram': eeg_spectrogram,
             'spectrogram': df_spectrogram[SPECTROGRAM_COLS_ORDERED].values,
             'spectrogram_time': df_spectrogram['time'].values,
-            'label': df[LABEL_COLS_ORDERED].values,
+            'label': label,
             'meta': df,
         }
 

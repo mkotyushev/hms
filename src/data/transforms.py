@@ -167,7 +167,6 @@ class Subrecord:
         item['eeg_spectrogram'] = eeg_spectrogram
         item['spectrogram'] = spectrogram
         item['spectrogram_time'] = spectrogram_time
-        item['label'] = subrecord[LABEL_COLS_ORDERED].values
         item['meta'] = subrecord
 
         return item
@@ -214,6 +213,10 @@ class CenterSubrecord(Subrecord):
     def __call__(self, *args, force_apply: bool = False, **item):
         # Get center sub-record
         subrecord = item['meta'].iloc[len(item['meta'].index) // 2]
+
+        # Add fields missing in test
+        subrecord['eeg_label_offset_seconds'] = 0.0
+        subrecord['spectrogram_label_offset_seconds'] = 0.0
         
         # Select
         item = self._select_by_subrecord(subrecord, **item)

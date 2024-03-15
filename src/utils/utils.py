@@ -8,7 +8,7 @@ from collections import defaultdict
 from typing import Dict, Optional, Union
 from lightning import Trainer
 from lightning.pytorch.cli import LightningCLI
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint, BasePredictionWriter
 from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from pathlib import Path
 from tqdm.auto import tqdm
@@ -19,6 +19,7 @@ from weakref import proxy
 from src.data.constants import (
     SPECTROGRAM_COLS_ORDERED, 
     EEG_COLS_ORDERED,
+    LABEL_COLS_ORDERED,
 )
 from src.data.pretransform import Gaussianize
 
@@ -382,3 +383,28 @@ def patch_first_conv(model, new_in_channels, default_in_channels=3, pretrained=T
 
         new_weight = new_weight * (default_in_channels / new_in_channels)
         module.weight = nn.parameter.Parameter(new_weight)
+
+
+class HmsPredictionWriter(BasePredictionWriter):
+    def __init__(self, output_filepath: Path):
+        super().__init__(write_interval='batch_and_epoch')
+        self.output_filepath = output_filepath
+        self.preds = defaultdict(list)
+
+    def write_on_batch_end(
+        self, trainer, pl_module, prediction, batch_indices, batch, batch_idx, dataloader_idx
+    ):
+        self.preds['eeg_id'].append(batch['meta']['eeg_id'])
+        self.preds['prediction'].append(prediction.detach().cpu().numpy())
+
+    def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
+        # Make dataframe
+        df = pd.DataFrame(
+            {
+                'eeg_id': np.concatenate(self.preds['eeg_id']),
+            }
+        )
+        df[LABEL_COLS_ORDERED] = np.concatenate(self.preds['prediction'], axis=0)
+
+        # Save
+        df.to_csv(self.output_filepath, index=False)

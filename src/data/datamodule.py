@@ -214,16 +214,19 @@ class HmsDatamodule(LightningDataModule):
             }
             yaml.dump(cache_info, f, default_flow_style=False)
 
-    def read_meta(self):
-        df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
+    def read_meta(self, test=False):
+        if test:
+            df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'test.csv')
+        else:
+            df_meta = pd.read_csv(self.hparams.dataset_dirpath / 'train.csv')
 
-        # Add n_voters column
-        df_meta['n_voters'] = df_meta[LABEL_COLS_ORDERED].sum(axis=1)
+            # Add n_voters column
+            df_meta['n_voters'] = df_meta[LABEL_COLS_ORDERED].sum(axis=1)
 
-        # Normalize the labels
-        df_meta[LABEL_COLS_ORDERED] = \
-            df_meta[LABEL_COLS_ORDERED].values / \
-            df_meta[LABEL_COLS_ORDERED].sum(axis=1).values[:, None]
+            # Normalize the labels
+            df_meta[LABEL_COLS_ORDERED] = \
+                df_meta[LABEL_COLS_ORDERED].values / \
+                df_meta[LABEL_COLS_ORDERED].sum(axis=1).values[:, None]
 
         return df_meta
 
@@ -276,94 +279,108 @@ class HmsDatamodule(LightningDataModule):
         return df
 
     def setup(self, stage: str = None) -> None:
-        df_meta = self.read_meta()
+        if (self.hparams.dataset_dirpath / 'train.csv').exists():
+            df_meta = self.read_meta(test=False)
 
-        # Read metadata & prepare filepathes
-        parquet_filepathes = [
-            self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
-            for spectrogram_id in sorted(df_meta['spectrogram_id'].unique())
-        ] + [
-            self.hparams.dataset_dirpath / 'train_eegs' / f'{eeg_id}.parquet'
-            for eeg_id in sorted(df_meta['eeg_id'].unique())
-        ]
+            # Read metadata & prepare filepathes
+            parquet_filepathes = [
+                self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
+                for spectrogram_id in sorted(df_meta['spectrogram_id'].unique())
+            ] + [
+                self.hparams.dataset_dirpath / 'train_eegs' / f'{eeg_id}.parquet'
+                for eeg_id in sorted(df_meta['eeg_id'].unique())
+            ]
 
-        self.make_cache(
-            parquet_filepathes=parquet_filepathes,
-        )
-
-        # Drop the rows with small number of voters: all
-        if self.hparams.drop_low_n_voters == 'all':
-            df_meta = df_meta[df_meta['n_voters'] > 7]
-
-        # Split to train, val and test
-        kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
-        train_indices, val_indices = list(
-            kfold.split(
-                X=df_meta, 
-                y=df_meta['expert_consensus'], 
-                groups=df_meta['patient_id']
+            self.make_cache(
+                parquet_filepathes=parquet_filepathes,
             )
-        )[self.hparams.split_index]
-        df_meta_train, df_meta_val = df_meta.iloc[train_indices].copy(), df_meta.iloc[val_indices].copy()
 
-        # Apply label smoothing
-        df_meta_train = self.apply_label_smoothing_n_voters(df_meta_train)
+            # Drop the rows with small number of voters: all
+            if self.hparams.drop_low_n_voters == 'all':
+                df_meta = df_meta[df_meta['n_voters'] > 7]
 
-        # Drop the rows with small number of : only for either train or val
-        if self.hparams.drop_low_n_voters == 'train':
-            df_meta_train = df_meta_train[df_meta_train['n_voters'] > 7]
-        elif self.hparams.drop_low_n_voters == 'val':
-            df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
+            # Split to train, val and test
+            kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
+            train_indices, val_indices = list(
+                kfold.split(
+                    X=df_meta, 
+                    y=df_meta['expert_consensus'], 
+                    groups=df_meta['patient_id']
+                )
+            )[self.hparams.split_index]
+            df_meta_train, df_meta_val = df_meta.iloc[train_indices].copy(), df_meta.iloc[val_indices].copy()
 
-        # Build pre-transform
-        self.pre_transform = Pretransform(
-            do_clip_eeg=self.hparams.load_kwargs.get('do_clip_eeg', False),
-            gaussianize_eeg=build_gaussianize(
-                df_meta_train, 
-                n_sample=10,
-                random_state=123125,
-                mode=self.hparams.load_kwargs.get('gaussianize_mode', None),
-            ),
-            do_mel_eeg=self.hparams.load_kwargs.get('do_mel_eeg', False),
-            # librosa is kind of bad with unlimited threads + MP 
-            # (as when there is no cache and the pretransform 
-            # is performed in dataloader), but if cache is enabled, 
-            # it is populated (and the pretransform is called) 
-            # in the main process. So, if cache is enabled, raise the
-            # threading limit.
-            max_threads=1 if self.hparams.cache_dir is None else 11
-        )
+            # Apply label smoothing
+            df_meta_train = self.apply_label_smoothing_n_voters(df_meta_train)
 
-        # Load pre-computed EEG spectrograms
-        eeg_spectrograms = np.load(self.hparams.dataset_dirpath / 'eeg_specs.npy', allow_pickle=True).item()
+            # Drop the rows with small number of : only for either train or val
+            if self.hparams.drop_low_n_voters == 'train':
+                df_meta_train = df_meta_train[df_meta_train['n_voters'] > 7]
+            elif self.hparams.drop_low_n_voters == 'val':
+                df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
 
-        if self.train_dataset is None:
-            self.train_dataset = HmsDataset(
-                df_meta_train,
-                eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
-                spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+            # Build pre-transform
+            self.pre_transform = Pretransform(
+                do_clip_eeg=self.hparams.load_kwargs.get('do_clip_eeg', False),
+                gaussianize_eeg=build_gaussianize(
+                    df_meta_train, 
+                    n_sample=10,
+                    random_state=123125,
+                    mode=self.hparams.load_kwargs.get('gaussianize_mode', None),
+                ),
+                do_mel_eeg=self.hparams.load_kwargs.get('do_mel_eeg', False),
+                # librosa is kind of bad with unlimited threads + MP 
+                # (as when there is no cache and the pretransform 
+                # is performed in dataloader), but if cache is enabled, 
+                # it is populated (and the pretransform is called) 
+                # in the main process. So, if cache is enabled, raise the
+                # threading limit.
+                max_threads=1 if self.hparams.cache_dir is None else 11
+            )
+
+            # Load pre-computed EEG spectrograms
+            eeg_spectrograms = np.load(self.hparams.dataset_dirpath / 'eeg_specs.npy', allow_pickle=True).item()
+
+            if self.train_dataset is None:
+                self.train_dataset = HmsDataset(
+                    df_meta_train,
+                    eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                    spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                    eeg_spectrograms=eeg_spectrograms,
+                    pre_transform=self.pre_transform,
+                    transform=None,  # Here transform depend on the dataset, so will be set later
+                    cache=self.cache,
+                )
+                self.build_transforms()
+                self.train_dataset.transform = self.train_transform
+
+            if self.val_dataset is None:
+                self.val_dataset = HmsDataset(
+                    df_meta_val,
+                    eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                    spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                    eeg_spectrograms=eeg_spectrograms,
+                    pre_transform=self.pre_transform,
+                    transform=self.val_transform,
+                    cache=self.cache,
+                )
+            
+        if self.test_dataset is None and (self.hparams.dataset_dirpath / 'test.csv').exists():
+            # Build transforms if not built yet
+            if self.test_transform is None:
+                self.build_transforms()
+            # Load pre-computed EEG spectrograms
+            eeg_spectrograms = np.load(self.hparams.dataset_dirpath / 'eeg_specs.npy', allow_pickle=True).item()
+            df_meta_test = self.read_meta(test=True)
+            self.test_dataset = HmsDataset(
+                df_meta_test,
+                eeg_dirpath=self.hparams.dataset_dirpath / 'test_eegs',
+                spectrogram_dirpath=self.hparams.dataset_dirpath / 'test_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
-                transform=None,  # Here transform depend on the dataset, so will be set later
+                transform=self.test_transform,
                 cache=self.cache,
             )
-            self.build_transforms()
-            self.train_dataset.transform = self.train_transform
-
-        if self.val_dataset is None:
-            self.val_dataset = HmsDataset(
-                df_meta_val,
-                eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
-                spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
-                eeg_spectrograms=eeg_spectrograms,
-                pre_transform=self.pre_transform,
-                transform=self.val_transform,
-                cache=self.cache,
-            )
-        
-        
-        # TODO: add test dataset
-        self.test_dataset = None
 
     def train_dataloader(self) -> DataLoader:        
         return DataLoader(
@@ -402,6 +419,7 @@ class HmsDatamodule(LightningDataModule):
             prefetch_factor=self.hparams.prefetch_factor,
             persistent_workers=self.hparams.persistent_workers,
             shuffle=False,
+            drop_last=False,
             collate_fn=hms_collate_fn,
         )
 

@@ -429,8 +429,12 @@ class HmsModule(BaseModule):
             preds = self.model(x_s, x_e)
         else:
             preds = self.model(batch['image'])
-        target = batch['label']
         log_preds = F.log_softmax(preds, dim=1)
+
+        if 'label' not in batch:
+            return None, dict(), log_preds
+
+        target = batch['label']
         kld = F.kl_div(
             log_preds, 
             target,
