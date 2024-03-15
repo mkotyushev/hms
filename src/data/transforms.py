@@ -169,7 +169,6 @@ class Subrecord:
         item['spectrogram_time'] = spectrogram_time
         if 'label' in item and item['label'] is not None:
             item['label'] = subrecord[LABEL_COLS_ORDERED].values
-        item['label'] = subrecord[LABEL_COLS_ORDERED].values
         item['meta'] = subrecord
 
         return item
