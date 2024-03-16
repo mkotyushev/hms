@@ -429,11 +429,12 @@ class HmsModule(BaseModule):
             preds = self.model(x_s, x_e)
         else:
             preds = self.model(batch['image'])
-        log_preds = F.log_softmax(preds, dim=1)
 
         if 'label' not in batch:
-            return None, dict(), log_preds
-
+            return None, dict(), preds
+        
+        # KL-divergence loss
+        log_preds = F.log_softmax(preds, dim=1)
         target = batch['label']
         kld = F.kl_div(
             log_preds, 
@@ -452,7 +453,7 @@ class HmsModule(BaseModule):
         losses = {
             'kld': kld
         }
-        return sum(losses.values()), losses, log_preds
+        return sum(losses.values()), losses, preds
 
     def training_step(self, batch, batch_idx, **kwargs):
         train_kwargs = {
