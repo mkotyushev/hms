@@ -39,12 +39,13 @@ class HmsDatamodule(LightningDataModule):
         dataset_dirpath: Path,	
         split_index: int,
         eeg_spectrograms_filepath: Path | None = None,
+        pl_filepath: Path | None = None,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         label_smoothing_n_voters: int | None = None,
-        drop_low_n_voters: Literal['train', 'val', 'all'] | None = None,
+        drop_low_n_voters: Literal['train', 'val', 'all', 'pl'] | None = None,
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
@@ -322,6 +323,25 @@ class HmsDatamodule(LightningDataModule):
                 df_meta_train = df_meta_train[df_meta_train['n_voters'] > 7]
             elif self.hparams.drop_low_n_voters == 'val':
                 df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
+            elif self.hparams.drop_low_n_voters == 'pl':
+                assert self.hparams.pl_filepath is not None
+
+                # Drop from val
+                df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
+
+                # Use pseudolabels for train objects with low number 
+                # of voters
+                df_pl = pd.read_csv(self.hparams.pl_filepath)
+                df_meta_train_high = df_meta_train[df_meta_train['n_voters'] > 7]
+                df_meta_train_low = df_meta_train[df_meta_train['n_voters'] <= 7] \
+                    .drop(LABEL_COLS_ORDERED, axis=1) 
+                df_meta_train_low = pd.merge(
+                    df_meta_train_low,
+                    df_pl,
+                    on='eeg_id',
+                    how='left',
+                )
+                df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
 
             # Build pre-transform
             self.pre_transform = Pretransform(
