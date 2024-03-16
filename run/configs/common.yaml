@@ -112,7 +112,7 @@ data:
     eeg_norm_strategy: meanstd
     spectrogram_norm_strategy: log
     label_smoothing_n_voters: null
-    drop_low_n_voters: null
+    low_n_voters_strategy: keep
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8

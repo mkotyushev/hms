@@ -45,7 +45,7 @@ class HmsDatamodule(LightningDataModule):
         eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
         spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
         label_smoothing_n_voters: int | None = None,
-        drop_low_n_voters: Literal['train', 'val', 'all', 'pl'] | None = None,
+        low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
         cache_dir: Optional[Path] = None,
         load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
@@ -300,40 +300,46 @@ class HmsDatamodule(LightningDataModule):
                 parquet_filepathes=parquet_filepathes,
             )
 
-            # Drop the rows with small number of voters: all
-            if self.hparams.drop_low_n_voters == 'all':
-                df_meta = df_meta[df_meta['n_voters'] > 7]
+            # Split only the rows with large number of voters
+            low_mask = df_meta['n_voters'] <= 7
+            df_meta_train_low = df_meta[low_mask]
+            df_meta_high = df_meta[~low_mask]
 
             # Split to train, val and test
             kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
             train_indices, val_indices = list(
                 kfold.split(
-                    X=df_meta, 
-                    y=df_meta['expert_consensus'], 
-                    groups=df_meta['patient_id']
+                    X=df_meta_high, 
+                    y=df_meta_high['expert_consensus'], 
+                    groups=df_meta_high['patient_id']
                 )
             )[self.hparams.split_index]
-            df_meta_train, df_meta_val = df_meta.iloc[train_indices].copy(), df_meta.iloc[val_indices].copy()
+            df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
 
             # Apply label smoothing
-            df_meta_train = self.apply_label_smoothing_n_voters(df_meta_train)
+            # Note: label smoothing is not applied to pseudolabels
+            df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
+            df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
 
-            # Drop the rows with small number of : only for either train or val
-            if self.hparams.drop_low_n_voters == 'train':
-                df_meta_train = df_meta_train[df_meta_train['n_voters'] > 7]
-            elif self.hparams.drop_low_n_voters == 'val':
-                df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
-            elif self.hparams.drop_low_n_voters == 'pl':
+            # Remove patient_id intersection with val
+            # from low n_voters part
+            df_meta_train_low = df_meta_train_low[
+                ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
+            ]
+
+            # What to do with objects with low number of voters
+            if self.hparams.low_n_voters_strategy == 'keep':
+                # Just concatenate
+                df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
+            elif self.hparams.low_n_voters_strategy == 'pl':
+                # Concatenate with high n_voters
+                # and use pseudolabels for low n_voters
                 assert self.hparams.pl_filepath is not None
-
-                # Drop from val
-                df_meta_val = df_meta_val[df_meta_val['n_voters'] > 7]
 
                 # Use pseudolabels for train objects with low number 
                 # of voters
                 df_pl = pd.read_csv(self.hparams.pl_filepath)
-                df_meta_train_high = df_meta_train[df_meta_train['n_voters'] > 7]
-                df_meta_train_low = df_meta_train[df_meta_train['n_voters'] <= 7] \
+                df_meta_train_low = df_meta_train_low \
                     .drop(LABEL_COLS_ORDERED, axis=1) 
                 df_meta_train_low = pd.merge(
                     df_meta_train_low,
@@ -341,7 +347,12 @@ class HmsDatamodule(LightningDataModule):
                     on='eeg_id',
                     how='left',
                 )
+                
+                # Concatenate
                 df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
+            else:
+                # Do not use low n_voters for training
+                df_meta_train = df_meta_train_high
 
             # Build pre-transform
             self.pre_transform = Pretransform(
