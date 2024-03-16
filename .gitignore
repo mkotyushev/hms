@@ -4,5 +4,6 @@ wandb/
 pipe/
 hms/
 packages/
+models/
 .cache/
 *.csv
