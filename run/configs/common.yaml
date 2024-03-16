@@ -13,6 +13,7 @@ trainer:
         output_filepath: ./submission.csv
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
+        filename: best
         save_top_k: 1
         monitor: val_loss_kld
         every_n_epochs: 1
