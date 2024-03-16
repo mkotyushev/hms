@@ -161,9 +161,18 @@ class HmsDatamodule(LightningDataModule):
             ]
         )
 
-    def make_cache(self, parquet_filepathes) -> None:
+    def make_cache(self, df_meta) -> None:
         if self.hparams.cache_dir is None:
             return
+
+        # Get parquet filepathes
+        parquet_filepathes = [
+            self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
+            for spectrogram_id in sorted(df_meta['spectrogram_id'].unique())
+        ] + [
+            self.hparams.dataset_dirpath / 'train_eegs' / f'{eeg_id}.parquet'
+            for eeg_id in sorted(df_meta['eeg_id'].unique())
+        ]
         
         # Name the cache with md5 hash of 
         # /workspace/contrails/src/data/datasets.py file
@@ -218,6 +227,18 @@ class HmsDatamodule(LightningDataModule):
                 'dirty': dirty,
             }
             yaml.dump(cache_info, f, default_flow_style=False)
+
+        # Make a fake dataset to populate the cache
+        # and save it to the cache file
+        fake_dataset = HmsDataset(
+            df_meta,
+            eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+            spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+            eeg_spectrograms=None,
+            pre_transform=self.pre_transform,
+            transform=None,
+            cache=self.cache,
+        )
 
     def read_meta(self, test=False):
         if test:
@@ -286,19 +307,6 @@ class HmsDatamodule(LightningDataModule):
     def setup(self, stage: str = None) -> None:
         if (self.hparams.dataset_dirpath / 'train.csv').exists():
             df_meta = self.read_meta(test=False)
-
-            # Read metadata & prepare filepathes
-            parquet_filepathes = [
-                self.hparams.dataset_dirpath / 'train_spectrograms' / f'{spectrogram_id}.parquet'
-                for spectrogram_id in sorted(df_meta['spectrogram_id'].unique())
-            ] + [
-                self.hparams.dataset_dirpath / 'train_eegs' / f'{eeg_id}.parquet'
-                for eeg_id in sorted(df_meta['eeg_id'].unique())
-            ]
-
-            self.make_cache(
-                parquet_filepathes=parquet_filepathes,
-            )
 
             # Split only the rows with large number of voters
             low_mask = df_meta['n_voters'] <= 7
@@ -372,6 +380,9 @@ class HmsDatamodule(LightningDataModule):
                 # threading limit.
                 max_threads=1 if self.hparams.cache_dir is None else 11
             )
+
+            # Make cache for all the data
+            self.make_cache(df_meta=df_meta)
 
             # Load pre-computed EEG spectrograms
             eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
