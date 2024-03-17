@@ -387,9 +387,11 @@ def patch_first_conv(model, new_in_channels, default_in_channels=3, pretrained=T
 
 
 class HmsPredictionWriter(BasePredictionWriter):
-    def __init__(self, output_filepath: Path):
+    def __init__(self, output_filepath: Path, image_output_dirpath: Path | None = None):
         super().__init__(write_interval='batch_and_epoch')
         self.output_filepath = output_filepath
+        self.image_output_dirpath = image_output_dirpath
+        self.image_output_dirpath.mkdir(parents=True, exist_ok=True)
         self.preds = defaultdict(list)
 
     def write_on_batch_end(
@@ -399,6 +401,14 @@ class HmsPredictionWriter(BasePredictionWriter):
         prediction = F.softmax(prediction.to(torch.float32), dim=1)
         self.preds['eeg_id'].append(batch['meta']['eeg_id'])
         self.preds['prediction'].append(prediction.detach().cpu().numpy())
+
+        if self.image_output_dirpath is not None:
+            images = batch['image'].detach().cpu().numpy()
+            for i in range(len(batch['meta']['eeg_id'])):
+                eeg_id = batch['meta']['eeg_id'].iloc[i]
+                filepath = self.image_output_dirpath / f'{eeg_id}.npy'
+                img = images[i]
+                np.save(filepath, img)
 
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
         # Make dataframe
