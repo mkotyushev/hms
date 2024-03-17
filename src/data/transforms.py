@@ -4,6 +4,7 @@ import numpy as np
 import random
 from copy import deepcopy
 from justpyplot import justpyplot as jplt
+from scipy.signal import butter, lfilter
 from typing import Dict, List, Callable
 
 from .constants import (
@@ -346,6 +347,17 @@ def plot_to_array(y, img_array):
     )
 
 
+# https://stackoverflow.com/a/25192640
+def butter_lowpass(cutoff, fs, order):
+    return butter(order, cutoff, fs=fs, btype='low', analog=False)
+
+
+def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
+    b, a = butter_lowpass(cutoff, fs, order=order)
+    y = lfilter(b, a, data)
+    return y
+
+
 class ToImage:
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
@@ -359,6 +371,7 @@ class ToImage:
             else:
                 y = subdf[cols[0]] - subdf[cols[1]]
             y[np.isnan(y)] = 0
+            y = butter_lowpass_filter(y, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5)
             min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
             y = np.clip(y, min_, max_)
             y = (y - min_) / (max_ - min_ + 1e-6)
