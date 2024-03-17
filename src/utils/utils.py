@@ -391,7 +391,8 @@ class HmsPredictionWriter(BasePredictionWriter):
         super().__init__(write_interval='batch_and_epoch')
         self.output_filepath = output_filepath
         self.image_output_dirpath = image_output_dirpath
-        self.image_output_dirpath.mkdir(parents=True, exist_ok=True)
+        if self.image_output_dirpath is not None:
+            self.image_output_dirpath.mkdir(parents=True, exist_ok=True)
         self.preds = defaultdict(list)
 
     def write_on_batch_end(
