@@ -21,7 +21,7 @@ from src.data.transforms import (
     Unsqueeze,
     RandomLrFlip,
 )
-from src.data.constants import LABEL_COLS_ORDERED, EEG_MINS, EEG_MAXS
+from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
@@ -76,9 +76,6 @@ class HmsDatamodule(LightningDataModule):
             [
                 RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 Normalize(
-                    eeg_min=EEG_MINS, 
-                    eeg_max=EEG_MAXS,
-                    clip_eeg=self.hparams.clip_eeg,
                     eps=1e-6
                 ),
                 RandomLrFlip(p=0.5),
@@ -107,9 +104,6 @@ class HmsDatamodule(LightningDataModule):
             [
                 CenterSubrecord(),
                 Normalize(
-                    eeg_min=EEG_MINS, 
-                    eeg_max=EEG_MAXS,
-                    clip_eeg=self.hparams.clip_eeg,
                     eps=1e-6
                 ),
                 ToImage(),

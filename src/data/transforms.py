@@ -18,6 +18,7 @@ from .constants import (
     MEL_HOP_LENGTH,
     EEG_LR_FLIP_REORDER_INDICES,
     EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES,
+    EEG_DIFF_ABS_MAX,
 )
 
 
@@ -273,14 +274,8 @@ class Compose:
 class Normalize:
     def __init__(
         self, 
-        eeg_min, 
-        eeg_max,
-        clip_eeg=True,
         eps=1e-6,
     ):
-        self.eeg_min = eeg_min
-        self.eeg_max = eeg_max
-        self.clip_eeg = clip_eeg
         self.eps = eps
 
     def __call__(self, *args, force_apply: bool = False, **item):
@@ -291,24 +286,8 @@ class Normalize:
         min_, max_ = np.quantile(spectrogram, 0.01), np.quantile(spectrogram, 0.99)
         spectrogram = np.clip(spectrogram, min_, max_)
         spectrogram = (spectrogram - min_) / (max_ - min_)
-
-        # s: (T=10000, F=20)
-        eeg = item['eeg']
-        eeg[np.isnan(eeg)] = 0
-        if self.clip_eeg:
-            eeg = np.clip(eeg, self.eeg_min, self.eeg_max)
-        eeg = (eeg - self.eeg_min) / (self.eeg_max - self.eeg_min)
-
-        # es: (K=128, T=?, F=4)
-        eeg_spectrogram = item['eeg_spectrogram']
-        eeg_spectrogram[np.isnan(eeg_spectrogram)] = 0
-        min_, max_ = np.quantile(eeg_spectrogram, 0.01), np.quantile(eeg_spectrogram, 0.99)
-        eeg_spectrogram = np.clip(eeg_spectrogram, min_, max_)
-        eeg_spectrogram = (eeg_spectrogram - min_) / (max_ - min_)
         
         item['spectrogram'] = spectrogram
-        item['eeg'] = eeg
-        item['eeg_spectrogram'] = eeg_spectrogram
         
         return item
 
@@ -359,7 +338,7 @@ def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
 class ToImage:
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
-        img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 320, 4), dtype=np.uint8)
+        img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 320, 4), dtype=np.uint16)
 
         eeg = item['eeg']
         subdf = eeg[4000:6000].T
@@ -368,10 +347,23 @@ class ToImage:
                 y = subdf[cols[0]]
             else:
                 y = subdf[cols[0]] - subdf[cols[1]]
-            y[np.isnan(y)] = 0
-            # TODO: fix bad lineplot appearance due to naive interpolation
-            plot_to_array(y, img_array[16 * i:16 * i + 16, :320])
 
+            # Clip to 2 * max
+            y[np.isnan(y)] = 0
+            y = butter_lowpass_filter(y, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5)
+            y = np.clip(y, -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i])
+            y = (y + 2 * EEG_DIFF_ABS_MAX[i]) / (4 * EEG_DIFF_ABS_MAX[i])
+            y[0] = 0
+            y[-1] = 1
+
+            if i == 0:
+                plot_to_array(y, img_array[16 * i:16 * i + 16 + 8, :320])
+            elif i == len(EEG_DIFF_COL_INDICES) - 1:
+                plot_to_array(y, img_array[16 * i - 8:16 * i + 16, :320])
+            else:
+                plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :320])
+
+        img_array = np.clip(img_array, 0, 255)
         img = np.zeros((640, 640), dtype=np.float32)
         img[:16 * len(EEG_DIFF_COL_INDICES), :320] = img_array[..., 3] / 255.0
 
