@@ -21,7 +21,7 @@ from src.data.transforms import (
     Unsqueeze,
     RandomLrFlip,
 )
-from src.data.constants import LABEL_COLS_ORDERED
+from src.data.constants import LABEL_COLS_ORDERED, EEG_MINS, EEG_MAXS
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
@@ -43,12 +43,10 @@ class HmsDatamodule(LightningDataModule):
         pl_filepath: Path | None = None,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
-        eeg_norm_strategy: Literal['meanstd', 'log', None] = 'meanstd',
-        spectrogram_norm_strategy: Literal['meanstd', 'log'] = 'log',
+        clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
         cache_dir: Optional[Path] = None,
-        load_kwargs: Optional[Dict[str, Any]] = None,
         batch_size: int = 32,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -56,8 +54,6 @@ class HmsDatamodule(LightningDataModule):
         persistent_workers: bool = False,
     ):
         super().__init__()
-        if load_kwargs is None:
-            load_kwargs = dict()
 
         if eeg_spectrograms_filepath is None:
             eeg_spectrograms_filepath = dataset_dirpath / 'eeg_specs.npy'
@@ -75,55 +71,15 @@ class HmsDatamodule(LightningDataModule):
 
         self.cache = None
 
-    def build_train_stats(self):
-        # EEG stats
-        eeg_mean, eeg_std = None, None
-        if self.hparams.eeg_norm_strategy == 'meanstd':
-            eeg_mean, eeg_std, *_ = build_stats(
-                self.train_dataset, 
-                filepathes=[
-                    self.train_dataset.eeg_dirpath / f'{eeg_id}.parquet'
-                    for eeg_id in self.train_dataset.df_meta['eeg_id'].unique()
-                ],
-                type_='eeg',
-            )
-
-        # Spectogram stats
-        spectrogram_mean, spectrogram_std = None, None
-        if self.hparams.spectrogram_norm_strategy == 'meanstd':
-            spectrogram_mean, spectrogram_std, *_ = build_stats(
-                self.train_dataset, 
-                filepathes=[
-                    self.train_dataset.spectrogram_dirpath / f'{spectrogram_id}.parquet'
-                    for spectrogram_id in self.train_dataset.df_meta['spectrogram_id'].unique()
-                ],
-                type_='spectrogram',
-            )
-
-        return eeg_mean, eeg_std, spectrogram_mean, spectrogram_std
-
     def build_transforms(self) -> None:
-        eeg_mean, eeg_std, spectrogram_mean, spectrogram_std = 0, 1, 0, 1
-        if self.hparams.eeg_norm_strategy is not None:
-            eeg_mean, eeg_std, spectrogram_mean, spectrogram_std = \
-                self.build_train_stats()
-        logger.info(
-            f'eeg_mean: {eeg_mean}\n'
-            f'eeg_std: {eeg_std}\n'
-            f'spectrogram_mean: {spectrogram_mean}\n'
-            f'spectrogram_std: {spectrogram_std}'
-        )
-
         self.train_transform = A.Compose(
             [
                 RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 Normalize(
-                    eeg_mean=eeg_mean, 
-                    eeg_std=eeg_std,
-                    spectrogram_mean=spectrogram_mean, 
-                    spectrogram_std=spectrogram_std,
-                    eeg_strategy=self.hparams.eeg_norm_strategy,
-                    spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
+                    eeg_min=EEG_MINS, 
+                    eeg_max=EEG_MAXS,
+                    clip_eeg=self.hparams.clip_eeg,
+                    eps=1e-6
                 ),
                 RandomLrFlip(p=0.5),
                 ToImage(),
@@ -151,12 +107,10 @@ class HmsDatamodule(LightningDataModule):
             [
                 CenterSubrecord(),
                 Normalize(
-                    eeg_mean=eeg_mean, 
-                    eeg_std=eeg_std,
-                    spectrogram_mean=spectrogram_mean, 
-                    spectrogram_std=spectrogram_std,
-                    eeg_strategy=self.hparams.eeg_norm_strategy,
-                    spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
+                    eeg_min=EEG_MINS, 
+                    eeg_max=EEG_MAXS,
+                    clip_eeg=self.hparams.clip_eeg,
+                    eps=1e-6
                 ),
                 ToImage(),
                 Unsqueeze(),
@@ -183,12 +137,8 @@ class HmsDatamodule(LightningDataModule):
         # is changed.
         with open(Path(__file__).parent / 'dataset.py', 'rb') as f:
             datasets_content = f.read()
-        with open(Path(__file__).parent / 'pretransform.py', 'rb') as f:
-            pretransform_content = f.read()
         datasets_file_hash = hashlib.md5(
-            datasets_content + 
-            pretransform_content +
-            str(self.hparams.load_kwargs).encode()
+            datasets_content
         ).hexdigest()
         cache_save_path = self.hparams.cache_dir / f'{datasets_file_hash}.joblib'
 
@@ -224,7 +174,6 @@ class HmsDatamodule(LightningDataModule):
                 logger.warning("Not a git repository")
             
             cache_info = {
-                'load_kwargs': self.hparams.load_kwargs, 
                 'commit_id': commit_id,
                 'dirty': dirty,
             }
@@ -363,25 +312,6 @@ class HmsDatamodule(LightningDataModule):
             else:
                 # Do not use low n_voters for training
                 df_meta_train = df_meta_train_high
-
-            # Build pre-transform
-            self.pre_transform = Pretransform(
-                do_clip_eeg=self.hparams.load_kwargs.get('do_clip_eeg', False),
-                gaussianize_eeg=build_gaussianize(
-                    df_meta_train, 
-                    n_sample=10,
-                    random_state=123125,
-                    mode=self.hparams.load_kwargs.get('gaussianize_mode', None),
-                ),
-                do_mel_eeg=self.hparams.load_kwargs.get('do_mel_eeg', False),
-                # librosa is kind of bad with unlimited threads + MP 
-                # (as when there is no cache and the pretransform 
-                # is performed in dataloader), but if cache is enabled, 
-                # it is populated (and the pretransform is called) 
-                # in the main process. So, if cache is enabled, raise the
-                # threading limit.
-                max_threads=1 if self.hparams.cache_dir is None else 11
-            )
 
             # Make cache for all the data
             self.make_cache(df_meta=df_meta)

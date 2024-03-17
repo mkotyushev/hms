@@ -1,7 +1,0 @@
-data:
-  init_args:
-    load_kwargs:
-      gaussianize_mode: pre
-      do_clip_eeg: false
-    eeg_norm_strategy: meanstd
-    cache_dir: /workspace/data_external/.cache_gaussianize

@@ -273,44 +273,42 @@ class Compose:
 class Normalize:
     def __init__(
         self, 
-        eeg_mean, 
-        eeg_std,
-        spectrogram_mean, 
-        spectrogram_std,
-        eeg_strategy='meanstd',
-        spectrogram_strategy='log',
+        eeg_min, 
+        eeg_max,
+        clip_eeg=True,
+        eps=1e-6,
     ):
-        self.eeg_mean = eeg_mean
-        self.eeg_std = eeg_std
-        self.spectrogram_mean = spectrogram_mean
-        self.spectrogram_std = spectrogram_std
-        self.eeg_strategy = eeg_strategy
-        self.spectrogram_strategy = spectrogram_strategy
+        self.eeg_min = eeg_min
+        self.eeg_max = eeg_max
+        self.clip_eeg = clip_eeg
+        self.eps = eps
 
     def __call__(self, *args, force_apply: bool = False, **item):
-        # s: (T=10000, F=20)
-        spectrogram = item['spectrogram']
-        if self.spectrogram_strategy == 'meanstd':
-            spectrogram = (spectrogram - self.spectrogram_mean) / self.spectrogram_std
-        elif self.spectrogram_strategy == 'log':
-            spectrogram = np.log10(spectrogram + 1)
-        else:
-            assert self.spectrogram_strategy is None, \
-                f'unknown strategy for spectrogram {self.spectrogram_strategy}'
-
         # e: (T=300, F=400)
+        spectrogram = item['spectrogram']
+        spectrogram[np.isnan(spectrogram)] = 0
+        spectrogram = np.log10(spectrogram + self.eps)
+        min_, max_ = np.quantile(spectrogram, 0.01), np.quantile(spectrogram, 0.99)
+        spectrogram = np.clip(spectrogram, min_, max_)
+        spectrogram = (spectrogram - min_) / (max_ - min_)
+
+        # s: (T=10000, F=20)
         eeg = item['eeg']
-        if self.eeg_strategy == 'meanstd':
-            eeg = (eeg - self.eeg_mean) / self.eeg_std
-        elif self.spectrogram_strategy == 'log':
-            abs_, sign = np.abs(eeg), np.sign(eeg)
-            eeg = np.log10(abs_ + 1) * sign
-        else:
-            assert self.eeg_strategy is None, \
-                f'unknown strategy for EEG {self.eeg_strategy}'
+        eeg[np.isnan(eeg)] = 0
+        if self.clip_eeg:
+            eeg = np.clip(eeg, self.eeg_min, self.eeg_max)
+        eeg = (eeg - self.eeg_min) / (self.eeg_max - self.eeg_min)
+
+        # es: (K=128, T=?, F=4)
+        eeg_spectrogram = item['eeg_spectrogram']
+        eeg_spectrogram[np.isnan(eeg_spectrogram)] = 0
+        min_, max_ = np.quantile(eeg_spectrogram, 0.01), np.quantile(eeg_spectrogram, 0.99)
+        eeg_spectrogram = np.clip(eeg_spectrogram, min_, max_)
+        eeg_spectrogram = (eeg_spectrogram - min_) / (max_ - min_)
         
         item['spectrogram'] = spectrogram
         item['eeg'] = eeg
+        item['eeg_spectrogram'] = eeg_spectrogram
         
         return item
 
@@ -371,10 +369,6 @@ class ToImage:
             else:
                 y = subdf[cols[0]] - subdf[cols[1]]
             y[np.isnan(y)] = 0
-            y = butter_lowpass_filter(y, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5)
-            min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
-            y = np.clip(y, min_, max_)
-            y = (y - min_) / (max_ - min_ + 1e-6)
             # TODO: fix bad lineplot appearance due to naive interpolation
             plot_to_array(y, img_array[16 * i:16 * i + 16, :320])
 
@@ -383,19 +377,12 @@ class ToImage:
 
         # 10 minutes spectrogram
         y = item['spectrogram']
-        y = np.log10(y + 1e-6)
         y[np.isnan(y)] = 0
-        min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
-        y = np.clip(y, min_, max_)
-        y = (y - min_) / (max_ - min_ + 1e-6)
         y = cv2.resize(y, (320, 320))
         img[:320, 320:] = y
 
         # 50 seconds EEG spectrogram
         y = item['eeg_spectrogram']
-        min_, max_ = np.quantile(y, 0.01), np.quantile(y, 0.99)
-        y = np.clip(y, min_, max_)
-        y = (y - min_) / (max_ - min_ + 1e-6)
         y = y.transpose(1, 2, 0).reshape(-1, y.shape[0] * y.shape[2])
         y = cv2.resize(y, (640, 320))
         img[320:, :] = y

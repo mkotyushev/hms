@@ -8,11 +8,5 @@ model:
 data:
   class_path: src.data.datamodule.HmsDatamodule
   init_args:
-    load_kwargs:
-      gaussianize_mode: null
-      do_mel_eeg: false
-      do_clip_eeg: false
-    eeg_norm_strategy: null
-    spectrogram_norm_strategy: null
     cache_dir: /workspace/data_external/.cache_img
     batch_size: 24
