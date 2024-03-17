@@ -340,7 +340,7 @@ def plot_to_array(y, img_array):
         y[1:], 
         x[1:],
         img_array,
-        clr=(0, 0, 0, 0), 
+        clr=(255, 255, 255, 255), 
         thickness=1
     )
 
@@ -359,7 +359,7 @@ def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
 class ToImage:
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
-        img_array = np.full((16 * len(EEG_DIFF_COL_INDICES), 320, 4), fill_value=255, dtype=np.uint8)
+        img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 320, 4), dtype=np.uint8)
 
         eeg = item['eeg']
         subdf = eeg[4000:6000].T
