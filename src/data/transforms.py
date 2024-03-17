@@ -15,6 +15,8 @@ from .constants import (
     MEL_N_FFT,
     EEG_DIFF_COL_INDICES,
     MEL_HOP_LENGTH,
+    EEG_LR_FLIP_REORDER_INDICES,
+    EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES,
 )
 
 
@@ -391,4 +393,33 @@ class ToImage:
 class Unsqueeze:
     def __call__(self, *args, force_apply: bool = False, **item):
         item['image'] = np.expand_dims(item['image'], axis=0)
+        return item
+
+
+class RandomLrFlip:
+    def __init__(self, always_apply=False, p=0.5):
+        self.p = p
+        self.always_apply = always_apply
+
+    def __call__(self, *args, force_apply: bool = False, **item):
+        if not force_apply and not self.always_apply and random.random() > self.p:
+            return item
+        assert 'image' not in item, 'RandomFlip should be applied before ToImage'
+
+        # Swap left and right EEGs: odd and even numbered channels
+        item['eeg'] = item['eeg'][:, EEG_LR_FLIP_REORDER_INDICES]
+
+        # Flip spectrogram: swap first and last halves
+        spectrogram_len = item['spectrogram'].shape[1]
+        item['spectrogram'] = np.concatenate(
+            [
+                item['spectrogram'][:, spectrogram_len // 2:], 
+                item['spectrogram'][:, :spectrogram_len // 2]
+            ],
+            axis=1
+        )
+
+        # Flip EEG spectrogram: swap 0 and 2, 1 and 3 in the last dimension
+        item['eeg_spectrogram'] = item['eeg_spectrogram'][:, :, EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES]
+
         return item

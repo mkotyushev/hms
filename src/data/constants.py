@@ -501,3 +501,21 @@ EEG_GAUSSIANIZE_COEFS_TRAIN = [
 MEL_HOP_LENGTH = 40
 MEL_N_FFT = 1000
 MEL_N_MELS = 128
+
+# Left-right flip reorder indices
+EEG_LR_FLIP_REORDER_INDICES = np.array(
+    [
+        1, 0,
+        2, 3,
+        5, 4,
+        7, 6,
+        9, 8,
+        10,
+        12, 11,
+        14, 13,
+        15,
+        17, 16,
+        19, 18
+    ]
+)
+EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES = np.array([2, 3, 0, 1])

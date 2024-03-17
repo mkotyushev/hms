@@ -19,6 +19,7 @@ from src.data.transforms import (
     ToImage,
     Normalize,
     Unsqueeze,
+    RandomLrFlip,
 )
 from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
@@ -124,6 +125,7 @@ class HmsDatamodule(LightningDataModule):
                     eeg_strategy=self.hparams.eeg_norm_strategy,
                     spectrogram_strategy=self.hparams.spectrogram_norm_strategy,
                 ),
+                RandomLrFlip(p=0.5),
                 ToImage(),
                 A.RandomBrightnessContrast(p=0.5, brightness_limit=0.1, contrast_limit=0.1),
                 A.OneOf(
