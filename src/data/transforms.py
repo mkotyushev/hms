@@ -348,9 +348,17 @@ class ToImage:
             else:
                 y = subdf[cols[0]] - subdf[cols[1]]
 
-            # Clip to 2 * max
             y[np.isnan(y)] = 0
-            y = butter_lowpass_filter(y, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5)
+
+            # Remove 50 Hz & 60 Hz noise
+            b, a = butter(5, (59, 61), btype='bandstop', analog=False, fs=EED_SAMPLING_RATE_HZ)
+            y = lfilter(b, a, y, axis=0)
+
+            # Bandpass 1-70 Hz
+            b, a = butter(5, (1, 70), btype='bandpass', analog=False, fs=EED_SAMPLING_RATE_HZ)
+            y = lfilter(b, a, y, axis=0)
+
+            # Clip to 2 * max
             y = np.clip(y, -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i])
             y = (y + 2 * EEG_DIFF_ABS_MAX[i]) / (4 * EEG_DIFF_ABS_MAX[i])
             y[0] = 0
