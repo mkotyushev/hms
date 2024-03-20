@@ -82,6 +82,23 @@ class HmsDatamodule(LightningDataModule):
                 ),
                 RandomLrFlip(p=0.5),
                 ToImage(),
+                # A.CoarseDropout(
+                #     max_holes=5, 
+                #     max_width=64, 
+                #     max_height=64,
+                #     min_holes=1,
+                #     min_width=16,
+                #     min_height=16, 
+                #     fill_value=0, 
+                #     p=0.5,
+                # ),
+                A.CoarseDropout(
+                    max_holes=5, 
+                    max_width=64, 
+                    max_height=64, 
+                    mask_fill_value=0, 
+                    p=0.5,
+                ),
                 TrivialAugmentWideWrapper(),
                 Unsqueeze(),
             ]
