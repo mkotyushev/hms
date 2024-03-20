@@ -1,0 +1,12 @@
+model:
+  class_path: src.model.modules.HmsModule
+  init_args:
+    model: hf_hub:timm/efficientvit_b2.r256_in1k
+    model_kwargs: 
+      pretrained: true
+      in_chans: 1
+data:
+  class_path: src.data.datamodule.HmsDatamodule
+  init_args:
+    cache_dir: /workspace/data_external/.cache_img
+    batch_size: 32
