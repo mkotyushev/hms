@@ -93,8 +93,8 @@ class HmsDatamodule(LightningDataModule):
                     eps=1e-6
                 ),
                 ToImage(),
-                Unsqueeze(),
                 To01(),
+                Unsqueeze(),
             ]
         )
 
