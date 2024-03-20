@@ -20,6 +20,8 @@ from src.data.transforms import (
     Normalize,
     Unsqueeze,
     RandomLrFlip,
+    TrivialAugmentWideWrapper,
+    To01,
 )
 from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
@@ -80,23 +82,7 @@ class HmsDatamodule(LightningDataModule):
                 ),
                 RandomLrFlip(p=0.5),
                 ToImage(),
-                A.RandomBrightnessContrast(p=0.5, brightness_limit=0.1, contrast_limit=0.1),
-                A.OneOf(
-                    [
-                        A.GaussNoise(var_limit=[0.1, 0.3]),
-                        A.GaussianBlur(),
-                        A.MotionBlur(),
-                    ], 
-                    p=0.4
-                ),
-                # A.GridDistortion(num_steps=5, distort_limit=0.3, p=0.5),
-                A.CoarseDropout(
-                    max_holes=5, 
-                    max_width=64, 
-                    max_height=64, 
-                    mask_fill_value=0, 
-                    p=0.5,
-                ),
+                TrivialAugmentWideWrapper(),
                 Unsqueeze(),
             ]
         )
@@ -108,6 +94,7 @@ class HmsDatamodule(LightningDataModule):
                 ),
                 ToImage(),
                 Unsqueeze(),
+                To01(),
             ]
         )
 
