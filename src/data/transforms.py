@@ -166,7 +166,6 @@ class Subrecord:
             spectrogram_for_50_sec_len = (EED_N_SAMPLES - MEL_N_FFT) // MEL_HOP_LENGTH + 1
             eeg_spectrogram_stop_index = eeg_spectrogram_start_index + spectrogram_for_50_sec_len
             eeg_spectrogram = eeg_spectrogram[:, eeg_spectrogram_start_index:eeg_spectrogram_stop_index]
-            eeg_spectrogram = eeg_spectrogram.astype(np.float32) / 255.0
 
         # Put back to item
         item['eeg'] = eeg
