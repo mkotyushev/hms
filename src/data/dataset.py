@@ -21,6 +21,7 @@ class HmsDataset:
         pre_transform: Callable | None = None,
         transform: Callable | None = None,
         cache: Dict[Path, pd.DataFrame] | None = None,
+        by_subrecord: bool = False,
     ):
         self.df_meta = df_meta
         self.eeg_dirpath = eeg_dirpath
@@ -30,17 +31,28 @@ class HmsDataset:
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
         self.cache = cache
+        self.by_subrecord = by_subrecord
         if self.cache is not None:
             self.populate_cache()
 
     def __len__(self) -> int:
-        return len(self.index_to_eeg_id)
+        if self.by_subrecord:
+            return len(self.df_meta)
+        else:
+            return len(self.index_to_eeg_id)
     
     def __getitem__(self, idx: int):
-        # Get group of same eed_id
-        eeg_id = self.index_to_eeg_id[idx]
-        df = self.df_meta[self.df_meta['eeg_id'] == eeg_id]
-        spectrogram_id = df['spectrogram_id'].iloc[0]  # all spectrogram_id are same 
+        if self.by_subrecord:
+            # Get single subrecord
+            df = self.df_meta.iloc[[idx]]
+            eeg_id = df['eeg_id'].iloc[0]
+            n_subrecords = (self.df_meta['eeg_id'] == eeg_id).sum()
+        else:
+            # Get group of same eed_id
+            eeg_id = self.index_to_eeg_id[idx]
+            df = self.df_meta[self.df_meta['eeg_id'] == eeg_id]
+            n_subrecords = 1  # here we will sample single subrecord later
+        spectrogram_id = df['spectrogram_id'].iloc[0]
 
         # Get item
         df_eeg_or_eeg = self.read_parquet(self.eeg_dirpath / f'{eeg_id}.parquet')
@@ -64,6 +76,7 @@ class HmsDataset:
             'spectrogram_time': df_spectrogram['time'].values,
             'label': label,
             'meta': df,
+            'n_subrecords': n_subrecords,
         }
 
         # Apply transform

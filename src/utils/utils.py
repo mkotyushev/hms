@@ -344,6 +344,8 @@ def hms_collate_fn(batch):
             v = np.stack(v).astype(np.float32)
             v = default_collate(v)
             output[k] = v
+        elif isinstance(v, list):
+            output[k] = default_collate(v)
         else:
             output[k] = default_collate(v.astype(np.float32))
     

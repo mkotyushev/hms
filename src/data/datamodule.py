@@ -46,6 +46,7 @@ class HmsDatamodule(LightningDataModule):
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
+        by_subrecord: bool = False,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         num_workers: int = 0,
@@ -183,6 +184,7 @@ class HmsDatamodule(LightningDataModule):
             pre_transform=self.pre_transform,
             transform=None,
             cache=self.cache,
+            by_subrecord=self.hparams.by_subrecord,
         )
 
     def read_meta(self, test=False):
@@ -322,6 +324,7 @@ class HmsDatamodule(LightningDataModule):
                     pre_transform=self.pre_transform,
                     transform=None,  # Here transform depend on the dataset, so will be set later
                     cache=self.cache,
+                    by_subrecord=self.hparams.by_subrecord,
                 )
                 self.build_transforms()
                 self.train_dataset.transform = self.train_transform
@@ -335,6 +338,7 @@ class HmsDatamodule(LightningDataModule):
                     pre_transform=self.pre_transform,
                     transform=self.val_transform,
                     cache=self.cache,
+                    by_subrecord=False,  # val is always with center subrecord
                 )
             
         if self.test_dataset is None and (self.hparams.dataset_dirpath / 'test.csv').exists():
@@ -352,6 +356,7 @@ class HmsDatamodule(LightningDataModule):
                 pre_transform=self.pre_transform,
                 transform=self.test_transform,
                 cache=self.cache,
+                by_subrecord=False,  # test is always with center subrecord
             )
 
     def train_dataloader(self) -> DataLoader:        

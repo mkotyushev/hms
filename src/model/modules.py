@@ -393,6 +393,7 @@ class HmsModule(BaseModule):
         model: str = 'hms_classifier',
         model_kwargs=None,
         weight_by_n_voters: bool = False,
+        weight_by_inv_n_subrecords: bool = False,
         lr=None,
         **base_kwargs,
     ):
@@ -418,6 +419,7 @@ class HmsModule(BaseModule):
         
     def compute_loss_preds(self, batch, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
+        weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
 
         if self.hparams.model == 'hms_classifier':
             if self.hparams.use == 'all':
@@ -443,12 +445,12 @@ class HmsModule(BaseModule):
             reduction='none',
         ).sum(1)
 
+        weight = torch.ones_like(kld)
         if weight_by_n_voters:
-            n_voters = torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
-            kld = (kld * n_voters).sum() / n_voters.sum()
-        else:
-            # Same as with reduction='batchmean'
-            kld = kld.sum() / kld.shape[0]
+            weight *= torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
+        if weight_by_inv_n_subrecords:
+            weight /= batch['n_subrecords']
+        kld = (kld * weight).sum() / weight.sum()
 
         losses = {
             'kld': kld
@@ -458,6 +460,7 @@ class HmsModule(BaseModule):
     def training_step(self, batch, batch_idx, **kwargs):
         train_kwargs = {
             'weight_by_n_voters': self.hparams.weight_by_n_voters,
+            'weight_by_inv_n_subrecords': self.hparams.weight_by_inv_n_subrecords,
         }
         return super().training_step(batch, batch_idx, **{**kwargs, **train_kwargs})
 

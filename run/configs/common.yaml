@@ -74,6 +74,7 @@ model:
       pool: cls
       use: all
     weight_by_n_voters: false
+    weight_by_inv_n_subrecords: false
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:
@@ -109,6 +110,7 @@ data:
     random_subrecord_mode: discrete
     label_smoothing_n_voters: null
     low_n_voters_strategy: keep
+    by_subrecord: false
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8
