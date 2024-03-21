@@ -17,3 +17,4 @@ justpyplot==0.1.1
 perf_timer==0.2.2
 PyWavelets==1.5.0
 albumentations==1.4.1
+kaggle==1.6.6
