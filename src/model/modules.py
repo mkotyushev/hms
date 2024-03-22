@@ -425,11 +425,11 @@ class HmsModule(BaseModule):
         if model_kwargs is None:
             model_kwargs = dict()
 
-        self.model_omit = None
+        self.model_low = None
         if online_pl:
-            self.model_omit = build_model(model, deepcopy(model_kwargs))
-        self.model_keep = build_model(model, deepcopy(model_kwargs))
-        self.model = self.model_keep
+            self.model_low = build_model(model, deepcopy(model_kwargs))
+        self.model_both = build_model(model, deepcopy(model_kwargs))
+        self.model = self.model_both
         
     def _compute_loss_preds(self, batch, weight=None, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
@@ -476,78 +476,90 @@ class HmsModule(BaseModule):
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
             # A single dataloader case
-            return self._compute_loss_preds(batch, **kwargs)
+            
+            if self.hparams.online_pl:
+                # Predit with model_both
+                with SetAttrContextManager(self, 'model', self.model_both):
+                    total_loss, losses_high, preds = \
+                        self._compute_loss_preds(batch, **kwargs)
+                    
+                # Predit with model_low
+                with SetAttrContextManager(self, 'model', self.model_low):
+                    _, losses_low, _ = \
+                        self._compute_loss_preds(batch, **kwargs)
+                    
+                losses = {
+                    f'{k}_high_on_low': v for k, v in losses_high.items()
+                } | {
+                    f'{k}_low_on_low': v for k, v in losses_low.items()
+                } | {
+                    k: v for k, v in losses_high.items()
+                }
+            else:
+                # Predit with model_both
+                with SetAttrContextManager(self, 'model', self.model_both):
+                    total_loss, losses, preds = self._compute_loss_preds(batch, **kwargs)
         else:
+            # Multiple dataloaders case: pseudo-labeling
             assert self.hparams.online_pl, \
                 'Multiple dataloaders are supported only with online pseudo-labeling.'
-            # Multiple dataloaders case: pseudo-labeling
-            batch_omit, batch_keep = batch
+            
+            batch_low, batch_high = batch
 
-            # Predictc for dataloader 1 (with keept bad labels) from model_omit
-            # without gradients
+            # Predict for high dataloader from low model
+            # to get PL labels without gradient
             with (
-                SetAttrContextManager(self, 'model', self.model_omit),
+                SetAttrContextManager(self, 'model', self.model_low),
                 torch.no_grad()
             ):
-                _, _, preds_keep = self._compute_loss_preds(batch_keep, **kwargs)
+                _, _, preds_high = self._compute_loss_preds(batch_high, **kwargs)
+                batch_high['label'] = torch.softmax(preds_high, dim=1)
 
-            # Set dataloader 1 bad labels to preds
-            # n_voters.shape = (batch_size,)
-            # labels.shape == preds.shape == (batch_size, n_classes)
-            n_voters = torch.from_numpy(batch_keep['meta']['n_voters'].values).to(preds_keep.device)
-            mask = n_voters.unsqueeze(1) <= 7
-            mask_sum = mask.sum()
+            # Predict for low dataloader
+            # from both model
+            with SetAttrContextManager(self, 'model', self.model_both):
+                total_loss_high_on_low, losses_high_on_low, preds_high_on_low = \
+                    self._compute_loss_preds(batch_low, **kwargs)
+            
+            # Predict for high dataloader 
+            # with PL labels
+            # from both model
+            with SetAttrContextManager(self, 'model', self.model_both):
+                total_loss_high_on_high, losses_high_on_high, _ = \
+                    self._compute_loss_preds(batch_high, **kwargs)
 
-            if mask_sum > 0:
-                batch_keep['label'] = torch.where(
-                    mask,
-                    torch.softmax(preds_keep, dim=1),
-                    batch_keep['label']
-                )
+            # Predict for low dataloader
+            # from low model
+            with SetAttrContextManager(self, 'model', self.model_low):
+                total_loss_low_on_low, losses_low_on_low, _ = \
+                    self._compute_loss_preds(batch_low, **kwargs)
+    
+            # Get current steps and max steps
+            # from the trainer and schedule 
+            # weight linearly from 0 to 1
+            current_step = self.trainer.global_step
+            total_steps = len(self.trainer.fit_loop._data_source.dataloader()) * self.trainer.max_epochs
+            grad_accum_steps = self.trainer.accumulate_grad_batches
+            w = current_step / (total_steps / grad_accum_steps)
 
-            weight = None
-            if mask_sum > 0 and mask_sum < mask.shape[0]:
-                # Get current steps and max steps
-                # from the trainer and schedule 
-                # weight linearly from 0 to 1
-                current_step = self.trainer.global_step
-                total_steps = len(self.trainer.fit_loop._data_source.dataloader()) * self.trainer.max_epochs
-                grad_accum_steps = self.trainer.accumulate_grad_batches
-                w = current_step / (total_steps / grad_accum_steps)
-
-                weight = torch.ones(
-                    batch_keep['label'].shape[0], 
-                    dtype=batch_keep['label'].dtype, 
-                    device=batch_keep['label'].device
-                )
-                weight = torch.where(
-                    mask,
-                    torch.full_like(weight, w),
-                    weight,
-                )
-
-            # Predit with model_keep for dataloader 1 (with kept bad labels replaced with preds)
-            # with gradients and weight
-            with SetAttrContextManager(self, 'model', self.model_keep):
-                total_loss_keep, losses_keep, preds_keep = \
-                    self._compute_loss_preds(batch_keep, weight=weight, **kwargs)
-
-            # Predit with model_omit for dataloader 0 (with omitted bad labels)
-            # with gradients
-            with SetAttrContextManager(self, 'model', self.model_omit):
-                total_loss_omit, losses_omit, _ = self._compute_loss_preds(batch_omit, **kwargs)
-
-            # Merge: with _omit suffix for dataloader 0 and without for dataloader 1
-            # and preds from main model
-            total_loss = total_loss_keep + total_loss_omit
+            # Merge
+            total_loss = (
+                total_loss_low_on_low + 
+                total_loss_high_on_low + 
+                w * total_loss_high_on_high
+            ) / (2 + w)
             losses = {
-                f'{k}_omit': v for k, v in losses_omit.items()
+                f'{k}_high_on_low': v for k, v in losses_high_on_low.items()
             } | {
-                k: v for k, v in losses_keep.items()
+                f'{k}_high_on_high': v for k, v in losses_high_on_high.items()
+            } | {
+                f'{k}_low_on_low': v for k, v in losses_low_on_low.items()
+            } | {
+                k: (losses_high_on_low[k] + losses_high_on_high[k]) / 2 for k in losses_high_on_low.keys()
             }
-            preds = preds_keep
+            preds = preds_high_on_low
 
-            return total_loss, losses, preds
+        return total_loss, losses, preds
 
     def training_step(self, batch, batch_idx, **kwargs):
         train_kwargs = {

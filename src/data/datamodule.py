@@ -66,7 +66,7 @@ class HmsDatamodule(LightningDataModule):
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
-        low_n_voters_strategy: Literal['keep', 'omit', 'online_pl'] = 'omit',
+        low_n_voters_strategy: Literal['low', 'hight', 'both', 'online_pl'] = 'low',
         by_subrecord: bool = False,
         img_size: int = 640,
         cache_dir: Optional[Path] = None,
@@ -83,8 +83,9 @@ class HmsDatamodule(LightningDataModule):
 
         self.save_hyperparameters()
 
-        self.train_dataset_omit = None
-        self.train_dataset_keep = None
+        self.train_dataset_low = None
+        self.train_dataset_high = None
+        self.train_dataset_both = None
         self.val_dataset = None
         self.test_dataset = None
 
@@ -307,8 +308,7 @@ class HmsDatamodule(LightningDataModule):
                 ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
             ]
 
-            df_meta_train_omit = df_meta_train_high
-            df_meta_train_keep = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
+            df_meta_train_both = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
 
             # Make cache for all the data
             self.make_cache(df_meta=df_meta)
@@ -319,9 +319,9 @@ class HmsDatamodule(LightningDataModule):
             # Load pre-computed EEG spectrograms
             eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
 
-            if self.train_dataset_omit is None:
-                self.train_dataset_omit = HmsDataset(
-                    df_meta_train_omit,
+            if self.train_dataset_low is None:
+                self.train_dataset_low = HmsDataset(
+                    df_meta_train_low,
                     eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                     spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                     eeg_spectrograms=eeg_spectrograms,
@@ -331,9 +331,21 @@ class HmsDatamodule(LightningDataModule):
                     by_subrecord=self.hparams.by_subrecord,
                 )
             
-            if self.train_dataset_keep is None:
-                self.train_dataset_keep = HmsDataset(
-                    df_meta_train_keep,
+            if self.train_dataset_high is None:
+                self.train_dataset_high = HmsDataset(
+                    df_meta_train_high,
+                    eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                    spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                    eeg_spectrograms=eeg_spectrograms,
+                    pre_transform=self.pre_transform,
+                    transform=self.train_transform,
+                    cache=self.cache,
+                    by_subrecord=self.hparams.by_subrecord,
+                )
+
+            if self.train_dataset_both is None:
+                self.train_dataset_both = HmsDataset(
+                    df_meta_train_both,
                     eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                     spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                     eeg_spectrograms=eeg_spectrograms,
@@ -376,10 +388,14 @@ class HmsDatamodule(LightningDataModule):
     def train_dataloader(self) -> DataLoader:
         if self.hparams.low_n_voters_strategy != 'online_pl':
             # Just a single dataset either with no low n_voters or with them
-            train_dataset = \
-                self.train_dataset_omit \
-                if self.hparams.low_n_voters_strategy == 'omit' else \
-                self.train_dataset_keep
+            if self.hparams.low_n_voters_strategy == 'low':
+                train_dataset = self.train_dataset_low
+            elif self.hparams.low_n_voters_strategy == 'high':
+                train_dataset = self.train_dataset_high
+            elif self.hparams.low_n_voters_strategy == 'both':
+                train_dataset = self.train_dataset_both
+            else:
+                raise ValueError(f"Unknown low_n_voters_strategy: {self.hparams.low_n_voters_strategy}")
             shuffle = True
             sampler = None
             collate_fn = hms_collate_fn
@@ -387,15 +403,15 @@ class HmsDatamodule(LightningDataModule):
             # Both datasets are used for training
             # simultaneously for online pseudolabeling
             train_dataset = ZipDataset(
-                [self.train_dataset_omit, self.train_dataset_keep]
+                [self.train_dataset_low, self.train_dataset_high]
             )
             shuffle = False
 
             # Sampler:
             sampler = ZipRandomSampler(
                 lengths=[
-                    len(self.train_dataset_omit), 
-                    len(self.train_dataset_keep)
+                    len(self.train_dataset_low), 
+                    len(self.train_dataset_high)
                 ]
             )
             collate_fn = hms_zip_collate_fn
