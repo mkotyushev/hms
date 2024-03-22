@@ -489,9 +489,9 @@ class HmsModule(BaseModule):
                         self._compute_loss_preds(batch, **kwargs)
                     
                 losses = {
-                    f'{k}_both_on_low': v for k, v in losses_both.items()
+                    f'{k}_both_on_high': v for k, v in losses_both.items()
                 } | {
-                    f'{k}_high_on_low': v for k, v in losses_high.items()
+                    f'{k}_high_on_high': v for k, v in losses_high.items()
                 } | {
                     k: v for k, v in losses_both.items()
                 }
