@@ -425,9 +425,9 @@ class HmsModule(BaseModule):
         if model_kwargs is None:
             model_kwargs = dict()
 
-        self.model_low = None
+        self.model_high = None
         if online_pl:
-            self.model_low = build_model(model, deepcopy(model_kwargs))
+            self.model_high = build_model(model, deepcopy(model_kwargs))
         self.model_both = build_model(model, deepcopy(model_kwargs))
         self.model = self.model_both
         
@@ -480,20 +480,20 @@ class HmsModule(BaseModule):
             if self.hparams.online_pl:
                 # Predit with model_both
                 with SetAttrContextManager(self, 'model', self.model_both):
-                    total_loss, losses_high, preds = \
+                    total_loss, losses_both, preds = \
                         self._compute_loss_preds(batch, **kwargs)
                     
-                # Predit with model_low
-                with SetAttrContextManager(self, 'model', self.model_low):
-                    _, losses_low, _ = \
+                # Predit with model_high
+                with SetAttrContextManager(self, 'model', self.model_high):
+                    _, losses_high, _ = \
                         self._compute_loss_preds(batch, **kwargs)
                     
                 losses = {
+                    f'{k}_both_on_low': v for k, v in losses_both.items()
+                } | {
                     f'{k}_high_on_low': v for k, v in losses_high.items()
                 } | {
-                    f'{k}_low_on_low': v for k, v in losses_low.items()
-                } | {
-                    k: v for k, v in losses_high.items()
+                    k: v for k, v in losses_both.items()
                 }
             else:
                 # Predit with model_both
@@ -506,33 +506,34 @@ class HmsModule(BaseModule):
             
             batch_low, batch_high = batch
 
-            # Predict for high dataloader from low model
+            # Predict for low dataloader 
+            # from high model
             # to get PL labels without gradient
             with (
-                SetAttrContextManager(self, 'model', self.model_low),
+                SetAttrContextManager(self, 'model', self.model_high),
                 torch.no_grad()
             ):
-                _, _, preds_high = self._compute_loss_preds(batch_high, **kwargs)
-                batch_high['label'] = torch.softmax(preds_high, dim=1)
+                _, _, preds_low = self._compute_loss_preds(batch_low, **kwargs)
+                batch_low['label'] = torch.softmax(preds_low, dim=1)
 
             # Predict for low dataloader
             # from both model
             with SetAttrContextManager(self, 'model', self.model_both):
-                total_loss_high_on_low, losses_high_on_low, preds_high_on_low = \
+                total_loss_both_on_low, losses_both_on_low, preds_both_on_low = \
                     self._compute_loss_preds(batch_low, **kwargs)
             
             # Predict for high dataloader 
             # with PL labels
             # from both model
             with SetAttrContextManager(self, 'model', self.model_both):
-                total_loss_high_on_high, losses_high_on_high, _ = \
+                total_loss_both_on_high, losses_both_on_high, _ = \
                     self._compute_loss_preds(batch_high, **kwargs)
 
             # Predict for low dataloader
             # from low model
-            with SetAttrContextManager(self, 'model', self.model_low):
-                total_loss_low_on_low, losses_low_on_low, _ = \
-                    self._compute_loss_preds(batch_low, **kwargs)
+            with SetAttrContextManager(self, 'model', self.model_high):
+                total_loss_high_on_high, losses_high_on_high, _ = \
+                    self._compute_loss_preds(batch_high, **kwargs)
     
             # Get current steps and max steps
             # from the trainer and schedule 
@@ -544,20 +545,20 @@ class HmsModule(BaseModule):
 
             # Merge
             total_loss = (
-                total_loss_low_on_low + 
-                total_loss_high_on_low + 
-                w * total_loss_high_on_high
+                total_loss_high_on_high + 
+                total_loss_both_on_high + 
+                w * total_loss_both_on_low
             ) / (2 + w)
             losses = {
-                f'{k}_high_on_low': v for k, v in losses_high_on_low.items()
+                f'{k}_both_on_low': v for k, v in losses_both_on_low.items()
+            } | {
+                f'{k}_both_on_high': v for k, v in losses_both_on_high.items()
             } | {
                 f'{k}_high_on_high': v for k, v in losses_high_on_high.items()
             } | {
-                f'{k}_low_on_low': v for k, v in losses_low_on_low.items()
-            } | {
-                k: (losses_high_on_low[k] + losses_high_on_high[k]) / 2 for k in losses_high_on_low.keys()
+                k: (losses_both_on_low[k] + losses_both_on_high[k]) / 2 for k in losses_both_on_low.keys()
             }
-            preds = preds_high_on_low
+            preds = preds_both_on_low
 
         return total_loss, losses, preds
 
