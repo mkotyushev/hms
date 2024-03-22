@@ -431,7 +431,7 @@ class HmsModule(BaseModule):
         self.model_keep = build_model(model, deepcopy(model_kwargs))
         self.model = self.model_keep
         
-    def _compute_loss_preds(self, batch, *args, **kwargs):
+    def _compute_loss_preds(self, batch, weight=None, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
         weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
 
@@ -459,7 +459,9 @@ class HmsModule(BaseModule):
             reduction='none',
         ).sum(1)
 
-        weight = torch.ones_like(kld)
+        if weight is None:
+            weight = torch.ones_like(kld)
+
         if weight_by_n_voters:
             weight *= torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
         if weight_by_inv_n_subrecords:
@@ -473,8 +475,6 @@ class HmsModule(BaseModule):
 
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
-            assert not self.hparams.online_pl, \
-                'Single dataloader is not supported with online pseudo-labeling.'
             # A single dataloader case
             return self._compute_loss_preds(batch, **kwargs)
         else:
@@ -495,16 +495,42 @@ class HmsModule(BaseModule):
             # n_voters.shape = (batch_size,)
             # labels.shape == preds.shape == (batch_size, n_classes)
             n_voters = torch.from_numpy(batch_keep['meta']['n_voters'].values).to(preds_keep.device)
-            batch_keep['label'] = torch.where(
-                n_voters.unsqueeze(1) <= 7,
-                torch.softmax(preds_keep, dim=1),
-                batch_keep['label']
-            )
+            mask = n_voters.unsqueeze(1) <= 7
+            mask_sum = mask.sum()
+
+            if mask_sum > 0:
+                batch_keep['label'] = torch.where(
+                    mask,
+                    torch.softmax(preds_keep, dim=1),
+                    batch_keep['label']
+                )
+
+            weight = None
+            if mask_sum > 0 and mask_sum < mask.shape[0]:
+                # Get current steps and max steps
+                # from the trainer and schedule 
+                # weight linearly from 0 to 1
+                current_step = self.trainer.global_step
+                total_steps = len(self.trainer.fit_loop._data_source.dataloader()) * self.trainer.max_epochs
+                grad_accum_steps = self.trainer.accumulate_grad_batches
+                w = current_step / (total_steps / grad_accum_steps)
+
+                weight = torch.ones(
+                    batch_keep['label'].shape[0], 
+                    dtype=batch_keep['label'].dtype, 
+                    device=batch_keep['label'].device
+                )
+                weight = torch.where(
+                    mask,
+                    torch.full_like(weight, w),
+                    weight,
+                )
 
             # Predit with model_keep for dataloader 1 (with kept bad labels replaced with preds)
-            # with gradients
+            # with gradients and weight
             with SetAttrContextManager(self, 'model', self.model_keep):
-                total_loss_keep, losses_keep, preds_keep = self._compute_loss_preds(batch_keep, **kwargs)
+                total_loss_keep, losses_keep, preds_keep = \
+                    self._compute_loss_preds(batch_keep, weight=weight, **kwargs)
 
             # Predit with model_omit for dataloader 0 (with omitted bad labels)
             # with gradients
