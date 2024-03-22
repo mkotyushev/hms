@@ -42,7 +42,7 @@ class HmsDatamodule(LightningDataModule):
         eeg_spectrograms_filepath: Path | None = None,
         pl_filepath: Path | None = None,
         n_splits: int = 5,
-        random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
+        random_subrecord_mode: Literal['discrete', 'gauss_discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['keep', 'pl'] | None = None,

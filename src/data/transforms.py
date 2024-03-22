@@ -2,6 +2,7 @@ import cv2
 import math
 import numpy as np
 import random
+import scipy.stats as ss
 from copy import deepcopy
 from justpyplot import justpyplot as jplt
 from scipy.signal import butter, lfilter
@@ -186,6 +187,14 @@ class RandomSubrecord(Subrecord):
         if self.mode == 'discrete':
             # Sample single sub-record
             subrecord = item['meta'].sample().squeeze()
+        elif self.mode == 'gauss_discrete':
+            # https://stackoverflow.com/a/37412692
+            x = np.arange(len(item['meta'].index))
+            xU, xL = x + 0.5, x - 0.5 
+            prob = ss.norm.cdf(xU, scale = 3) - ss.norm.cdf(xL, scale = 3)
+            prob = prob / prob.sum() # normalize the probabilities so their sum is 1
+            index = np.random.choice(x, size=1, p = prob)
+            subrecord = item['meta'].iloc[index].squeeze()
         elif self.mode == 'cont':
             # Select index
             val = np.random.rand() * (len(item['meta'].index) - 2)
