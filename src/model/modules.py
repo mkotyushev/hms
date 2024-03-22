@@ -517,13 +517,13 @@ class HmsModule(BaseModule):
                 batch_low['label'] = torch.softmax(preds_low, dim=1)
 
             # Predict for low dataloader
+            # with PL labels
             # from both model
             with SetAttrContextManager(self, 'model', self.model_both):
                 total_loss_both_on_low, losses_both_on_low, preds_both_on_low = \
                     self._compute_loss_preds(batch_low, **kwargs)
             
             # Predict for high dataloader 
-            # with PL labels
             # from both model
             with SetAttrContextManager(self, 'model', self.model_both):
                 total_loss_both_on_high, losses_both_on_high, _ = \
@@ -548,7 +548,7 @@ class HmsModule(BaseModule):
                 total_loss_high_on_high + 
                 total_loss_both_on_high + 
                 w * total_loss_both_on_low
-            ) / (2 + w)
+            )
             losses = {
                 f'{k}_both_on_low': v for k, v in losses_both_on_low.items()
             } | {
@@ -556,7 +556,7 @@ class HmsModule(BaseModule):
             } | {
                 f'{k}_high_on_high': v for k, v in losses_high_on_high.items()
             } | {
-                k: (losses_both_on_low[k] + losses_both_on_high[k]) / 2 for k in losses_both_on_low.keys()
+                k: v for k, v in losses_both_on_low.items()
             }
             preds = preds_both_on_low
 
