@@ -522,13 +522,13 @@ class HmsModule(BaseModule):
             # with PL labels
             # from both model
             with SetAttrContextManager(self, 'model', self.model_both):
-                total_loss_both_on_low, losses_both_on_low, preds_both_on_low = \
+                total_loss_both_on_low, losses_both_on_low, _ = \
                     self._compute_loss_preds(batch_low, **kwargs)
             
             # Predict for high dataloader 
             # from both model
             with SetAttrContextManager(self, 'model', self.model_both):
-                total_loss_both_on_high, losses_both_on_high, _ = \
+                total_loss_both_on_high, losses_both_on_high, preds_both_on_high = \
                     self._compute_loss_preds(batch_high, **kwargs)
 
             # Predict for low dataloader
@@ -558,9 +558,9 @@ class HmsModule(BaseModule):
             } | {
                 f'{k}_high_on_high': v for k, v in losses_high_on_high.items()
             } | {
-                k: v for k, v in losses_both_on_low.items()
+                k: v for k, v in losses_both_on_high.items()
             }
-            preds = preds_both_on_low
+            preds = preds_both_on_high
 
         return total_loss, losses, preds
 
