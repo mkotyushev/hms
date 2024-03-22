@@ -111,7 +111,7 @@ data:
     label_smoothing_n_voters: null
     low_n_voters_strategy: keep
     by_subrecord: false
-    img_size: 640
+    img_size: null
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8

@@ -47,7 +47,7 @@ class HmsDatamodule(LightningDataModule):
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
         by_subrecord: bool = False,
-        img_size: int = 640,
+        img_size: Optional[int] = None,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         num_workers: int = 0,
@@ -74,6 +74,9 @@ class HmsDatamodule(LightningDataModule):
         self.cache = None
 
     def build_transforms(self) -> None:
+        resize_transform = []
+        if self.hparams.img_size is not None:
+            resize_transform = [A.Resize(self.hparams.img_size, self.hparams.img_size)]
         self.train_transform = A.Compose(
             [
                 RandomSubrecord(mode=self.hparams.random_subrecord_mode),
@@ -99,7 +102,7 @@ class HmsDatamodule(LightningDataModule):
                     mask_fill_value=0, 
                     p=0.5,
                 ),
-                A.Resize(self.hparams.img_size, self.hparams.img_size),
+                *resize_transform,
                 Unsqueeze(),
             ]
         )
@@ -110,7 +113,7 @@ class HmsDatamodule(LightningDataModule):
                     eps=1e-6
                 ),
                 ToImage(),
-                A.Resize(self.hparams.img_size, self.hparams.img_size),
+                *resize_transform,
                 Unsqueeze(),
             ]
         )
