@@ -429,6 +429,7 @@ class HmsPredictionWriter(BasePredictionWriter):
                 img = (img * 255).astype(np.uint8)
                 img = img[0]
                 img = Image.fromarray(img)
+                img = img.resize((128, 128))
                 img.save(filepath)
 
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
