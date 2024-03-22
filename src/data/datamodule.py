@@ -66,7 +66,7 @@ class HmsDatamodule(LightningDataModule):
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
-        low_n_voters_strategy: Literal['low', 'hight', 'both', 'online_pl'] = 'low',
+        low_n_voters_strategy: Literal['low', 'high', 'both', 'online_pl'] = 'low',
         by_subrecord: bool = False,
         img_size: int = 640,
         cache_dir: Optional[Path] = None,
