@@ -429,7 +429,7 @@ class HmsModule(BaseModule):
         if online_pl:
             self.model_high = build_model(model, deepcopy(model_kwargs))
         self.model_both = build_model(model, deepcopy(model_kwargs))
-        self.model = self.model_both
+        self.model = None
         
     def _compute_loss_preds(self, batch, weight=None, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
@@ -509,12 +509,14 @@ class HmsModule(BaseModule):
             # Predict for low dataloader 
             # from high model
             # to get PL labels without gradient
-            with (
-                SetAttrContextManager(self, 'model', self.model_high),
-                torch.no_grad()
-            ):
+            # TODO: why torch.no_grad() doesn't work here?
+            for param in self.model_high.parameters():
+                param.requires_grad = False
+            with SetAttrContextManager(self, 'model', self.model_high):
                 _, _, preds_low = self._compute_loss_preds(batch_low, **kwargs)
                 batch_low['label'] = torch.softmax(preds_low, dim=1)
+            for param in self.model_high.parameters():
+                param.requires_grad = True
 
             # Predict for low dataloader
             # with PL labels
