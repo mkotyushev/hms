@@ -1,0 +1,10 @@
+trainer:
+  callbacks:
+    - class_path: src.utils.utils.HmsPredictionWriter
+      init_args:
+        output_filepath: /workspace/data_external/pseudolabel/submission.csv
+        image_output_dirpath: /workspace/data_external/pseudolabel/images
+        drop_eeg_sub_id: false
+data:
+  init_args:
+    test_is_train: true

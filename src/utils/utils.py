@@ -12,6 +12,7 @@ from lightning.pytorch.cli import LightningCLI
 from lightning.pytorch.callbacks import ModelCheckpoint, BasePredictionWriter
 from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from pathlib import Path
+from PIL import Image
 from tqdm.auto import tqdm
 from torch.utils.data import default_collate
 from typing import Dict, List, Literal, Tuple
@@ -389,12 +390,18 @@ def patch_first_conv(model, new_in_channels, default_in_channels=3, pretrained=T
 
 
 class HmsPredictionWriter(BasePredictionWriter):
-    def __init__(self, output_filepath: Path, image_output_dirpath: Path | None = None):
+    def __init__(
+        self, 
+        output_filepath: Path, 
+        image_output_dirpath: Path | None = None,
+        drop_eeg_sub_id: bool = True,
+    ):
         super().__init__(write_interval='batch_and_epoch')
         self.output_filepath = output_filepath
         self.image_output_dirpath = image_output_dirpath
         if self.image_output_dirpath is not None:
             self.image_output_dirpath.mkdir(parents=True, exist_ok=True)
+        self.drop_eeg_sub_id = drop_eeg_sub_id
         self.preds = defaultdict(list)
 
     def write_on_batch_end(
@@ -403,27 +410,44 @@ class HmsPredictionWriter(BasePredictionWriter):
         # Increase precision
         prediction = F.softmax(prediction.to(torch.float32), dim=1)
         self.preds['eeg_id'].append(batch['meta']['eeg_id'])
+        self.preds['eeg_sub_id'].append(batch['meta']['eeg_sub_id'])
         self.preds['prediction'].append(prediction.detach().cpu().numpy())
 
         if self.image_output_dirpath is not None:
             images = batch['image'].detach().cpu().numpy()
             for i in range(len(batch['meta']['eeg_id'])):
                 eeg_id = batch['meta']['eeg_id'].iloc[i]
-                filepath = self.image_output_dirpath / f'{eeg_id}.npy'
+                eeg_sub_id = batch['meta']['eeg_sub_id'].iloc[i]
                 img = images[i]
+
+                # Save as npy
+                filepath = self.image_output_dirpath / f'{eeg_id}_{eeg_sub_id}.npy'
                 np.save(filepath, img)
+
+                # Also save as png
+                filepath = self.image_output_dirpath / f'{eeg_id}_{eeg_sub_id}.png'
+                img = (img * 255).astype(np.uint8)
+                img = img[0]
+                img = Image.fromarray(img)
+                img.save(filepath)
 
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
         # Make dataframe
         df = pd.DataFrame(
             {
                 'eeg_id': np.concatenate(self.preds['eeg_id']),
+                'eeg_sub_id': np.concatenate(self.preds['eeg_sub_id']),
             }
         )
         df[LABEL_COLS_ORDERED] = np.concatenate(self.preds['prediction'], axis=0)
 
         # Convert type
         df['eeg_id'] = df['eeg_id'].astype(int)
+        df['eeg_sub_id'] = df['eeg_sub_id'].astype(int)
+
+        # Drop eeg_sub_id
+        if self.drop_eeg_sub_id:
+            df = df.drop(columns=['eeg_sub_id'])
 
         # Save
         df.to_csv(self.output_filepath, index=False)
