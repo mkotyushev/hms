@@ -47,6 +47,7 @@ class HmsDatamodule(LightningDataModule):
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
         by_subrecord: bool = False,
+        test_is_train: bool = False,
         img_size: Optional[int] = None,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
@@ -258,111 +259,113 @@ class HmsDatamodule(LightningDataModule):
         return df
 
     def setup(self, stage: str = None) -> None:
-        if (self.hparams.dataset_dirpath / 'train.csv').exists():
-            df_meta = self.read_meta(test=False)
+        # Read meta
+        df_meta = self.read_meta(test=False)
+        df_meta_test = self.read_meta(test=not self.hparams.test_is_train)
 
-            # Split only the rows with large number of voters
-            low_mask = df_meta['n_voters'] <= 7
-            df_meta_train_low = df_meta[low_mask]
-            df_meta_high = df_meta[~low_mask]
+        # Load pre-computed EEG spectrograms
+        eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
 
-            # Split to train, val and test
-            kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
-            train_indices, val_indices = list(
-                kfold.split(
-                    X=df_meta_high, 
-                    y=df_meta_high['expert_consensus'], 
-                    groups=df_meta_high['patient_id']
-                )
-            )[self.hparams.split_index]
-            df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
+        # Make cache for all the data
+        self.make_cache(df_meta=df_meta)
 
-            # Apply label smoothing
-            # Note: label smoothing is not applied to pseudolabels
-            df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
-            df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
+        # Build transforms
+        self.build_transforms()
 
-            # Remove patient_id intersection with val
-            # from low n_voters part
-            df_meta_train_low = df_meta_train_low[
-                ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
-            ]
+        # Split only the rows with large number of voters
+        low_mask = df_meta['n_voters'] <= 7
+        df_meta_train_low = df_meta[low_mask]
+        df_meta_high = df_meta[~low_mask]
 
-            # What to do with objects with low number of voters
-            if self.hparams.low_n_voters_strategy == 'keep':
-                # Just concatenate
-                df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
-            elif self.hparams.low_n_voters_strategy == 'pl':
-                # Concatenate with high n_voters
-                # and use pseudolabels for low n_voters
-                assert self.hparams.pl_filepath is not None
+        # Split to train, val and test
+        kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
+        train_indices, val_indices = list(
+            kfold.split(
+                X=df_meta_high, 
+                y=df_meta_high['expert_consensus'], 
+                groups=df_meta_high['patient_id']
+            )
+        )[self.hparams.split_index]
+        df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
 
-                # Use pseudolabels for train objects with low number 
-                # of voters
-                df_pl = pd.read_csv(self.hparams.pl_filepath)
-                df_meta_train_low = df_meta_train_low \
-                    .drop(LABEL_COLS_ORDERED, axis=1) 
-                df_meta_train_low = pd.merge(
-                    df_meta_train_low,
-                    df_pl,
-                    on='eeg_id',
-                    how='left',
-                )
-                
-                # Concatenate
-                df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
-            else:
-                # Do not use low n_voters for training
-                df_meta_train = df_meta_train_high
+        # Apply label smoothing
+        # Note: label smoothing is not applied to pseudolabels
+        df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
+        df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
 
-            # Make cache for all the data
-            self.make_cache(df_meta=df_meta)
+        # Remove patient_id intersection with val
+        # from low n_voters part
+        df_meta_train_low = df_meta_train_low[
+            ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
+        ]
 
-            # Load pre-computed EEG spectrograms
-            eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
+        # What to do with objects with low number of voters
+        if self.hparams.low_n_voters_strategy == 'keep':
+            # Just concatenate
+            df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
+        elif self.hparams.low_n_voters_strategy == 'pl':
+            # Concatenate with high n_voters
+            # and use pseudolabels for low n_voters
+            assert self.hparams.pl_filepath is not None
 
-            if self.train_dataset is None:
-                self.train_dataset = HmsDataset(
-                    df_meta_train,
-                    eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
-                    spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
-                    eeg_spectrograms=eeg_spectrograms,
-                    pre_transform=self.pre_transform,
-                    transform=None,  # Here transform depend on the dataset, so will be set later
-                    cache=self.cache,
-                    by_subrecord=self.hparams.by_subrecord,
-                )
-                self.build_transforms()
-                self.train_dataset.transform = self.train_transform
-
-            if self.val_dataset is None:
-                self.val_dataset = HmsDataset(
-                    df_meta_val,
-                    eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
-                    spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
-                    eeg_spectrograms=eeg_spectrograms,
-                    pre_transform=self.pre_transform,
-                    transform=self.val_transform,
-                    cache=self.cache,
-                    by_subrecord=False,  # val is always with center subrecord
-                )
+            # Use pseudolabels for train objects with low number 
+            # of voters
+            df_pl = pd.read_csv(self.hparams.pl_filepath)
+            df_meta_train_low = df_meta_train_low \
+                .drop(LABEL_COLS_ORDERED, axis=1) 
+            df_meta_train_low = pd.merge(
+                df_meta_train_low,
+                df_pl,
+                on='eeg_id',
+                how='left',
+            )
             
-        if self.test_dataset is None and (self.hparams.dataset_dirpath / 'test.csv').exists():
-            # Build transforms if not built yet
-            if self.test_transform is None:
-                self.build_transforms()
-            # Load pre-computed EEG spectrograms
-            eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
-            df_meta_test = self.read_meta(test=True)
+            # Concatenate
+            df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
+        else:
+            # Do not use low n_voters for training
+            df_meta_train = df_meta_train_high
+
+        if self.train_dataset is None:
+            self.train_dataset = HmsDataset(
+                df_meta_train,
+                eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                eeg_spectrograms=eeg_spectrograms,
+                pre_transform=self.pre_transform,
+                transform=self.train_transform,
+                cache=self.cache,
+                by_subrecord=self.hparams.by_subrecord,
+            )
+
+        if self.val_dataset is None:
+            self.val_dataset = HmsDataset(
+                df_meta_val,
+                eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                eeg_spectrograms=eeg_spectrograms,
+                pre_transform=self.pre_transform,
+                transform=self.val_transform,
+                cache=self.cache,
+                by_subrecord=False,  # val is always with center subrecord
+            )
+            
+        if self.test_dataset is None:
+            if self.hparams.test_is_train:
+                eeg_dirpath = self.hparams.dataset_dirpath / 'train_eegs'
+                spectrogram_dirpath = self.hparams.dataset_dirpath / 'train_spectrograms'
             self.test_dataset = HmsDataset(
                 df_meta_test,
-                eeg_dirpath=self.hparams.dataset_dirpath / 'test_eegs',
-                spectrogram_dirpath=self.hparams.dataset_dirpath / 'test_spectrograms',
+                eeg_dirpath=eeg_dirpath,
+                spectrogram_dirpath=spectrogram_dirpath,
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
                 transform=self.test_transform,
                 cache=self.cache,
-                by_subrecord=False,  # test is always with center subrecord
+                # test is always by subrecord: 
+                # either single subrecord for kaggle or 
+                # all subrecords for local analysis
+                by_subrecord=True,
             )
 
     def train_dataloader(self) -> DataLoader:        
