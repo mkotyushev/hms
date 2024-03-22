@@ -9,6 +9,7 @@ from torch import Tensor
 from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
+from pathlib import Path
 
 from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
@@ -413,6 +414,7 @@ class HmsModule(BaseModule):
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
+        ckpt_path_to_ft: Optional[Path] = None,
         online_pl: bool = False,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
@@ -430,6 +432,16 @@ class HmsModule(BaseModule):
             self.model_high = build_model(model, deepcopy(model_kwargs))
         self.model_both = build_model(model, deepcopy(model_kwargs))
         self.model = None
+
+        # Only load state_dict not optimizer state etc.
+        if ckpt_path_to_ft is not None:
+            state_dict = torch.load(ckpt_path_to_ft)['state_dict']
+            if not online_pl:
+                state_dict = {
+                    k: v for k, v in state_dict.items()
+                    if not k.startswith('model_high')
+                }
+            self.load_state_dict(state_dict)
         
     def _compute_loss_preds(self, batch, weight=None, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)

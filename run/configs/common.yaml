@@ -73,6 +73,7 @@ model:
       cheap_cross: false
       pool: cls
       use: all
+    ckpt_path_to_ft: null
     weight_by_n_voters: false
     weight_by_inv_n_subrecords: false
     optimizer_init: 
