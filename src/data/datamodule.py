@@ -283,7 +283,7 @@ class HmsDatamodule(LightningDataModule):
 
             # Split only the rows with large number of voters
             low_mask = df_meta['n_voters'] <= 7
-            df_meta_train_low = df_meta[low_mask]
+            df_meta_low = df_meta[low_mask]
             df_meta_high = df_meta[~low_mask]
 
             # Split to train, val and test
@@ -297,18 +297,16 @@ class HmsDatamodule(LightningDataModule):
             )[self.hparams.split_index]
             df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
 
-            # Apply label smoothing
-            # Note: label smoothing is not applied to pseudolabels
-            df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
-            df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
-
             # Remove patient_id intersection with val
             # from low n_voters part
-            df_meta_train_low = df_meta_train_low[
-                ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
+            df_meta_train_low = df_meta_low[
+                ~df_meta_low['patient_id'].isin(df_meta_val['patient_id'])
             ]
 
-            df_meta_train_both = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
+            # Apply label smoothing
+            df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
+            df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
+            df_meta_train_both = pd.concat([df_meta_train_low, df_meta_train_high], axis=0)
 
             # Make cache for all the data
             self.make_cache(df_meta=df_meta)
