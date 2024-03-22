@@ -9,7 +9,7 @@ WORKDIR /workspace/hms
 # Apt-get installs
 RUN \
     apt update && \
-    apt-get -y install git unzip wget tmux curl
+    apt-get -y install git unzip wget tmux curl libgl1 libglib2.0-0
 
 # Install Miniconda
 RUN \
