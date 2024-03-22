@@ -395,6 +395,7 @@ class HmsPredictionWriter(BasePredictionWriter):
         output_filepath: Path, 
         image_output_dirpath: Path | None = None,
         drop_eeg_sub_id: bool = True,
+        img_size: int = 320,
     ):
         super().__init__(write_interval='batch_and_epoch')
         self.output_filepath = output_filepath
@@ -402,6 +403,7 @@ class HmsPredictionWriter(BasePredictionWriter):
         if self.image_output_dirpath is not None:
             self.image_output_dirpath.mkdir(parents=True, exist_ok=True)
         self.drop_eeg_sub_id = drop_eeg_sub_id
+        self.img_size = img_size
         self.preds = defaultdict(list)
 
     def write_on_batch_end(
@@ -425,7 +427,7 @@ class HmsPredictionWriter(BasePredictionWriter):
                 img = (img * 255).astype(np.uint8)
                 img = img[0]
                 img = Image.fromarray(img)
-                img = img.resize((128, 128))
+                img = img.resize((self.img_size, self.img_size))
                 img.save(filepath)
 
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
