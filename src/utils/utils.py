@@ -46,6 +46,10 @@ class MyLightningCLI(LightningCLI):
         if 'fit' in self.config and self.config['fit']['model']['init_args']['lr'] is not None:
             self.config['fit']['model']['init_args']['optimizer_init']['init_args']['lr'] = \
                 self.config['fit']['model']['init_args']['lr']
+        
+        # Forward online PL arg from data to model
+        self.config['fit']['model']['init_args']['online_pl'] = \
+            self.config['fit']['data']['init_args']['low_n_voters_strategy'] == 'online_pl'
 
 
 class TrainerWandb(Trainer):
@@ -352,6 +356,14 @@ def hms_collate_fn(batch):
     return output
 
 
+def hms_zip_collate_fn(zip_batch):
+    """Collate function for hoa zip dataset.
+    zip_batch: list of tuples of dicts of key:str, value: np.ndarray | list | None
+    output: list of dicts of torch.Tensor
+    """
+    return [hms_collate_fn(batch) for batch in zip(*zip_batch)]
+
+
 def patch_first_conv(model, new_in_channels, default_in_channels=3, pretrained=True, conv_type=nn.Conv2d):
     """Change first convolution layer input channels.
     In case:
@@ -427,3 +439,17 @@ class HmsPredictionWriter(BasePredictionWriter):
 
         # Save
         df.to_csv(self.output_filepath, index=False)
+
+
+class SetAttrContextManager:
+    def __init__(self, obj, attr, value):
+        self.obj = obj
+        self.attr = attr
+        self.value = value
+
+    def __enter__(self):
+        self.old_value = getattr(self.obj, self.attr)
+        setattr(self.obj, self.attr, self.value)
+
+    def __exit__(self, *args):
+        setattr(self.obj, self.attr, self.old_value)

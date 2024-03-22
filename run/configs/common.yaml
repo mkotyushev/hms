@@ -109,7 +109,7 @@ data:
     n_splits: 5
     random_subrecord_mode: discrete
     label_smoothing_n_voters: null
-    low_n_voters_strategy: keep
+    low_n_voters_strategy: omit
     by_subrecord: false
     img_size: 640
     cache_dir: /workspace/data_external/.cache

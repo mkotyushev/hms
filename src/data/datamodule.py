@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 import yaml
 import albumentations as A
-import torch
+import random
 from pathlib import Path
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Literal, List, Iterator
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 from sklearn.model_selection import StratifiedGroupKFold
 
 from src.data.dataset import HmsDataset
@@ -25,12 +25,33 @@ from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
-    build_stats,
+    hms_zip_collate_fn,
 )
-from src.data.pretransform import Pretransform, build_gaussianize
 
 
 logger = logging.getLogger(__name__)
+
+
+class ZipDataset:
+    def __init__(self, datasets):
+        self.datasets = datasets
+
+    def __getitem__(self, indices):
+        return tuple(dataset[index] for index, dataset in zip(indices, self.datasets))
+
+    def __len__(self):
+        return min(len(dataset) for dataset in self.datasets)
+
+
+class ZipRandomSampler(Sampler[List[int]]):
+    def __init__(self, lengths: List[int]):
+        self.indices_per_dataset = [range(length) for length in lengths]
+    
+    def __iter__(self) -> Iterator[List[int]]:
+        yield from zip(*[random.sample(indices, k=len(self)) for indices in self.indices_per_dataset])
+
+    def __len__(self):
+        return min(len(indices) for indices in self.indices_per_dataset)
 
 
 class HmsDatamodule(LightningDataModule):
@@ -45,7 +66,7 @@ class HmsDatamodule(LightningDataModule):
         random_subrecord_mode: Literal['discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
-        low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
+        low_n_voters_strategy: Literal['keep', 'omit', 'online_pl'] = 'omit',
         by_subrecord: bool = False,
         img_size: int = 640,
         cache_dir: Optional[Path] = None,
@@ -62,7 +83,8 @@ class HmsDatamodule(LightningDataModule):
 
         self.save_hyperparameters()
 
-        self.train_dataset = None
+        self.train_dataset_omit = None
+        self.train_dataset_keep = None
         self.val_dataset = None
         self.test_dataset = None
 
@@ -285,52 +307,41 @@ class HmsDatamodule(LightningDataModule):
                 ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
             ]
 
-            # What to do with objects with low number of voters
-            if self.hparams.low_n_voters_strategy == 'keep':
-                # Just concatenate
-                df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
-            elif self.hparams.low_n_voters_strategy == 'pl':
-                # Concatenate with high n_voters
-                # and use pseudolabels for low n_voters
-                assert self.hparams.pl_filepath is not None
-
-                # Use pseudolabels for train objects with low number 
-                # of voters
-                df_pl = pd.read_csv(self.hparams.pl_filepath)
-                df_meta_train_low = df_meta_train_low \
-                    .drop(LABEL_COLS_ORDERED, axis=1) 
-                df_meta_train_low = pd.merge(
-                    df_meta_train_low,
-                    df_pl,
-                    on='eeg_id',
-                    how='left',
-                )
-                
-                # Concatenate
-                df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
-            else:
-                # Do not use low n_voters for training
-                df_meta_train = df_meta_train_high
+            df_meta_train_omit = df_meta_train_high
+            df_meta_train_keep = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
 
             # Make cache for all the data
             self.make_cache(df_meta=df_meta)
 
+            # Build transforms
+            self.build_transforms()
+
             # Load pre-computed EEG spectrograms
             eeg_spectrograms = np.load(self.hparams.eeg_spectrograms_filepath, allow_pickle=True).item()
 
-            if self.train_dataset is None:
-                self.train_dataset = HmsDataset(
-                    df_meta_train,
+            if self.train_dataset_omit is None:
+                self.train_dataset_omit = HmsDataset(
+                    df_meta_train_omit,
                     eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                     spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                     eeg_spectrograms=eeg_spectrograms,
                     pre_transform=self.pre_transform,
-                    transform=None,  # Here transform depend on the dataset, so will be set later
+                    transform=self.train_transform,
                     cache=self.cache,
                     by_subrecord=self.hparams.by_subrecord,
                 )
-                self.build_transforms()
-                self.train_dataset.transform = self.train_transform
+            
+            if self.train_dataset_keep is None:
+                self.train_dataset_keep = HmsDataset(
+                    df_meta_train_keep,
+                    eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                    spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                    eeg_spectrograms=eeg_spectrograms,
+                    pre_transform=self.pre_transform,
+                    transform=self.train_transform,
+                    cache=self.cache,
+                    by_subrecord=self.hparams.by_subrecord,
+                )
 
             if self.val_dataset is None:
                 self.val_dataset = HmsDataset(
@@ -362,17 +373,44 @@ class HmsDatamodule(LightningDataModule):
                 by_subrecord=False,  # test is always with center subrecord
             )
 
-    def train_dataloader(self) -> DataLoader:        
+    def train_dataloader(self) -> DataLoader:
+        if self.hparams.low_n_voters_strategy != 'online_pl':
+            # Just a single dataset either with no low n_voters or with them
+            train_dataset = \
+                self.train_dataset_omit \
+                if self.hparams.low_n_voters_strategy == 'omit' else \
+                self.train_dataset_keep
+            shuffle = True
+            sampler = None
+            collate_fn = hms_collate_fn
+        else:
+            # Both datasets are used for training
+            # simultaneously for online pseudolabeling
+            train_dataset = ZipDataset(
+                [self.train_dataset_omit, self.train_dataset_keep]
+            )
+            shuffle = False
+
+            # Sampler:
+            sampler = ZipRandomSampler(
+                lengths=[
+                    len(self.train_dataset_omit), 
+                    len(self.train_dataset_keep)
+                ]
+            )
+            collate_fn = hms_zip_collate_fn
+            
         return DataLoader(
-            dataset=self.train_dataset, 
+            dataset=train_dataset, 
             batch_size=self.hparams.batch_size, 
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory, 
             prefetch_factor=self.hparams.prefetch_factor,
             persistent_workers=self.hparams.persistent_workers,
-            shuffle=True,
+            sampler=sampler,
+            shuffle=shuffle,
             drop_last=True,
-            collate_fn=hms_collate_fn,
+            collate_fn=collate_fn,
         )
 
     def val_dataloader(self) -> DataLoader:

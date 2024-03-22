@@ -1,17 +1,18 @@
 import logging
 import torch
-import timm
-from lightning import LightningModule
-from typing import Any, Dict, Optional, Union, Literal
-from torch import Tensor
 import torch.nn.functional as F
+import timm
+from copy import deepcopy
+from lightning import LightningModule
+from typing import Any, Dict, Optional, Union
+from torch import Tensor
 from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
 
 from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
-from src.utils.utils import state_norm, patch_first_conv
+from src.utils.utils import state_norm, patch_first_conv, SetAttrContextManager
 from src.utils.mechanic import mechanize
 
 
@@ -123,6 +124,9 @@ class BaseModule(LightningModule):
                 param.requires_grad = selected
 
     def training_step(self, batch, batch_idx, **kwargs):
+        # Cover both single and multiple dataloaders case: pseudo-labeling
+        batch_size = batch['eeg'].shape[0] if isinstance(batch, dict) else batch[0]['eeg'].shape[0]
+
         total_loss, losses, preds = self.compute_loss_preds(batch, **kwargs)
         for loss_name, loss in losses.items():
             self.log(
@@ -131,7 +135,7 @@ class BaseModule(LightningModule):
                 on_step=True,
                 on_epoch=True,
                 prog_bar=True,
-                batch_size=batch['eeg'].shape[0],
+                batch_size=batch_size,
             )
         self.update_metrics('train_metrics', preds, batch)
 
@@ -387,11 +391,29 @@ class BaseModule(LightningModule):
                 self.log('state_2.0_norm_total', norms['state_2.0_norm_total'])
 
 
+def build_model(model_type, model_kwargs):
+    if model_type == 'hms_classifier':
+        model = HmsClassifier(
+            n_classes=N_CLASSES,
+            input_dim_s=100,
+            num_patches_s=1200,
+            input_dim_e=200,
+            num_patches_e=1000,
+            **model_kwargs,
+        )
+    else:
+        in_chans = model_kwargs.pop('in_chans', 3)
+        model = timm.create_model(model_type, num_classes=N_CLASSES, **model_kwargs)
+        patch_first_conv(model, in_chans)
+    return model
+
+
 class HmsModule(BaseModule):
     def __init__(
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
+        online_pl: bool = False,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
         lr=None,
@@ -403,21 +425,13 @@ class HmsModule(BaseModule):
         if model_kwargs is None:
             model_kwargs = dict()
 
-        if model == 'hms_classifier':
-            self.model = HmsClassifier(
-                n_classes=N_CLASSES,
-                input_dim_s=100,
-                num_patches_s=1200,
-                input_dim_e=200,
-                num_patches_e=1000,
-                **model_kwargs,
-            )
-        else:
-            in_chans = model_kwargs.pop('in_chans', 3)
-            self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
-            patch_first_conv(self.model, in_chans)
+        self.model_omit = None
+        if online_pl:
+            self.model_omit = build_model(model, deepcopy(model_kwargs))
+        self.model_keep = build_model(model, deepcopy(model_kwargs))
+        self.model = self.model_keep
         
-    def compute_loss_preds(self, batch, *args, **kwargs):
+    def _compute_loss_preds(self, batch, *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
         weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
 
@@ -456,6 +470,58 @@ class HmsModule(BaseModule):
             'kld': kld
         }
         return sum(losses.values()), losses, preds
+
+    def compute_loss_preds(self, batch, *args, **kwargs):
+        if isinstance(batch, dict):
+            assert not self.hparams.online_pl, \
+                'Single dataloader is not supported with online pseudo-labeling.'
+            # A single dataloader case
+            return self._compute_loss_preds(batch, **kwargs)
+        else:
+            assert self.hparams.online_pl, \
+                'Multiple dataloaders are supported only with online pseudo-labeling.'
+            # Multiple dataloaders case: pseudo-labeling
+            batch_omit, batch_keep = batch
+
+            # Predictc for dataloader 1 (with keept bad labels) from model_omit
+            # without gradients
+            with (
+                SetAttrContextManager(self, 'model', self.model_omit),
+                torch.no_grad()
+            ):
+                _, _, preds_keep = self._compute_loss_preds(batch_keep, **kwargs)
+
+            # Set dataloader 1 bad labels to preds
+            # n_voters.shape = (batch_size,)
+            # labels.shape == preds.shape == (batch_size, n_classes)
+            n_voters = torch.from_numpy(batch_keep['meta']['n_voters'].values).to(preds_keep.device)
+            batch_keep['label'] = torch.where(
+                n_voters.unsqueeze(1) <= 7,
+                torch.softmax(preds_keep, dim=1),
+                batch_keep['label']
+            )
+
+            # Predit with model_keep for dataloader 1 (with kept bad labels replaced with preds)
+            # with gradients
+            with SetAttrContextManager(self, 'model', self.model_keep):
+                total_loss_keep, losses_keep, preds_keep = self._compute_loss_preds(batch_keep, **kwargs)
+
+            # Predit with model_omit for dataloader 0 (with omitted bad labels)
+            # with gradients
+            with SetAttrContextManager(self, 'model', self.model_omit):
+                total_loss_omit, losses_omit, _ = self._compute_loss_preds(batch_omit, **kwargs)
+
+            # Merge: with _omit suffix for dataloader 0 and without for dataloader 1
+            # and preds from main model
+            total_loss = total_loss_keep + total_loss_omit
+            losses = {
+                f'{k}_omit': v for k, v in losses_omit.items()
+            } | {
+                k: v for k, v in losses_keep.items()
+            }
+            preds = preds_keep
+
+            return total_loss, losses, preds
 
     def training_step(self, batch, batch_idx, **kwargs):
         train_kwargs = {
