@@ -420,11 +420,7 @@ class HmsPredictionWriter(BasePredictionWriter):
                 eeg_sub_id = batch['meta']['eeg_sub_id'].iloc[i]
                 img = images[i]
 
-                # Save as npy
-                filepath = self.image_output_dirpath / f'{eeg_id}_{eeg_sub_id}.npy'
-                np.save(filepath, img)
-
-                # Also save as png
+                # Save as png
                 filepath = self.image_output_dirpath / f'{eeg_id}_{eeg_sub_id}.png'
                 img = (img * 255).astype(np.uint8)
                 img = img[0]
