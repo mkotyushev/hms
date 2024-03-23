@@ -225,9 +225,13 @@ class RandomSubrecord(Subrecord):
 
 
 class CenterSubrecord(Subrecord):
+    def __init__(self, percentage: float = 0.5):
+        self.percentage = percentage
+
     def __call__(self, *args, force_apply: bool = False, **item):
         # Get center sub-record
-        subrecord = item['meta'].iloc[len(item['meta'].index) // 2]
+        index = int((len(item['meta'].index) - 1) * self.percentage)
+        subrecord = item['meta'].iloc[index]
 
         # Add fields missing in test
         if 'eeg_label_offset_seconds' not in subrecord:

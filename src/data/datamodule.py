@@ -49,6 +49,7 @@ class HmsDatamodule(LightningDataModule):
         by_subrecord: bool = False,
         test_is_train: bool = False,
         img_size: Optional[int] = None,
+        val_center_subrecord_percentage: float = 0.5,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         num_workers: int = 0,
@@ -109,7 +110,7 @@ class HmsDatamodule(LightningDataModule):
         )
         self.val_transform = self.test_transform = A.Compose(
             [
-                CenterSubrecord(),
+                CenterSubrecord(percentage=self.hparams.val_center_subrecord_percentage),
                 Normalize(
                     eps=1e-6
                 ),
