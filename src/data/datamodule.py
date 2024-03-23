@@ -25,7 +25,9 @@ from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
-    build_stats,
+    hms_zip_collate_fn,
+    ZipDataset,
+    ZipRandomSampler,
 )
 from src.data.pretransform import Pretransform, build_gaussianize
 
@@ -45,10 +47,9 @@ class HmsDatamodule(LightningDataModule):
         random_subrecord_mode: Literal['discrete', 'gauss_discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
-        low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
+        low_n_voters_strategy: Literal['low', 'high', 'both', 'simultaneous'] = 'high',
         by_subrecord: bool = False,
         test_is_train: bool = False,
-        transform_low_n_voters_twice: bool = False,
         img_size: Optional[int] = None,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
@@ -64,16 +65,21 @@ class HmsDatamodule(LightningDataModule):
 
         self.save_hyperparameters()
 
-        self.train_dataset = None
+        self.train_dataset_low = None
+        self.train_dataset_high = None
+        self.train_dataset_both = None
         self.val_dataset = None
         self.test_dataset = None
 
         self.train_select_transform = None
         self.train_transform = None
+
         self.val_select_transform = None
         self.val_transform = None
+
         self.test_select_transform = None
         self.test_transform = None
+
         self.pre_transform = None
 
         self.cache = None
@@ -292,54 +298,59 @@ class HmsDatamodule(LightningDataModule):
         )[self.hparams.split_index]
         df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
 
-        # Apply label smoothing
-        # Note: label smoothing is not applied to pseudolabels
-        df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
-        df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
-
         # Remove patient_id intersection with val
         # from low n_voters part
         df_meta_train_low = df_meta_train_low[
             ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
         ]
 
-        # What to do with objects with low number of voters
-        if self.hparams.low_n_voters_strategy == 'keep':
-            # Just concatenate
-            df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
-        elif self.hparams.low_n_voters_strategy == 'pl':
-            # Concatenate with high n_voters
-            # and use pseudolabels for low n_voters
-            assert self.hparams.pl_filepath is not None
+        # Apply label smoothing
+        # Note: label smoothing is not applied to pseudolabels
+        df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
+        df_meta_train_low = self.apply_label_smoothing_n_voters(df_meta_train_low)
+        df_meta_train_both = pd.concat([df_meta_train_low, df_meta_train_high], axis=0)
 
-            # Use pseudolabels for train objects with low number 
-            # of voters
-            df_pl = pd.read_csv(self.hparams.pl_filepath)
-            df_meta_train_low = df_meta_train_low \
-                .drop(LABEL_COLS_ORDERED, axis=1) 
-            df_meta_train_low = pd.merge(
+        if self.train_dataset_low is None:
+            self.train_dataset_low = HmsDataset(
                 df_meta_train_low,
-                df_pl,
-                on='eeg_id',
-                how='left',
-            )
-            
-            # Concatenate
-            df_meta_train = pd.concat([df_meta_train_high, df_meta_train_low], axis=0)
-        else:
-            # Do not use low n_voters for training
-            df_meta_train = df_meta_train_high
-
-        if self.train_dataset is None:
-            self.train_dataset = HmsDataset(
-                df_meta_train,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
                 select_transform=self.train_select_transform,
                 transform=self.train_transform,
-                transform_low_n_voters_twice=self.hparams.transform_low_n_voters_twice,
+                # simultaneous trainig is used for training with consistency loss
+                # which involves applying two different transformation
+                # to the same object from low dataset
+                do_aux_transform=self.hparams.low_n_voters_strategy == 'simultaneous',
+                cache=self.cache,
+                by_subrecord=self.hparams.by_subrecord,
+            )
+        
+        if self.train_dataset_high is None:
+            self.train_dataset_high = HmsDataset(
+                df_meta_train_high,
+                eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                eeg_spectrograms=eeg_spectrograms,
+                pre_transform=self.pre_transform,
+                select_transform=self.train_select_transform,
+                transform=self.train_transform,
+                do_aux_transform=False,  # only for low
+                cache=self.cache,
+                by_subrecord=self.hparams.by_subrecord,
+            )
+
+        if self.train_dataset_both is None:
+            self.train_dataset_both = HmsDataset(
+                df_meta_train_both,
+                eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
+                spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
+                eeg_spectrograms=eeg_spectrograms,
+                pre_transform=self.pre_transform,
+                select_transform=self.train_select_transform,
+                transform=self.train_transform,
+                do_aux_transform=False,  # only for low
                 cache=self.cache,
                 by_subrecord=self.hparams.by_subrecord,
             )
@@ -353,7 +364,7 @@ class HmsDatamodule(LightningDataModule):
                 pre_transform=self.pre_transform,
                 select_transform=self.val_select_transform,
                 transform=self.val_transform,
-                transform_low_n_voters_twice=False,  # only for train
+                do_aux_transform=False,  # only for low
                 cache=self.cache,
                 by_subrecord=False,  # val is always with center subrecord
             )
@@ -362,6 +373,9 @@ class HmsDatamodule(LightningDataModule):
             if self.hparams.test_is_train:
                 eeg_dirpath = self.hparams.dataset_dirpath / 'train_eegs'
                 spectrogram_dirpath = self.hparams.dataset_dirpath / 'train_spectrograms'
+            else:
+                eeg_dirpath = self.hparams.dataset_dirpath / 'test_eegs'
+                spectrogram_dirpath = self.hparams.dataset_dirpath / 'test_spectrograms'
             self.test_dataset = HmsDataset(
                 df_meta_test,
                 eeg_dirpath=eeg_dirpath,
@@ -370,7 +384,7 @@ class HmsDatamodule(LightningDataModule):
                 pre_transform=self.pre_transform,
                 select_transform=self.test_select_transform,
                 transform=self.test_transform,
-                transform_low_n_voters_twice=False,  # only for train
+                do_aux_transform=False,  # only for low
                 cache=self.cache,
                 # test is always by subrecord: 
                 # either single subrecord for kaggle or 
@@ -379,16 +393,47 @@ class HmsDatamodule(LightningDataModule):
             )
 
     def train_dataloader(self) -> DataLoader:        
+        if self.hparams.low_n_voters_strategy != 'simultaneous':
+            # Just a single dataset either with no low n_voters or with them
+            if self.hparams.low_n_voters_strategy == 'low':
+                train_dataset = self.train_dataset_low
+            elif self.hparams.low_n_voters_strategy == 'high':
+                train_dataset = self.train_dataset_high
+            elif self.hparams.low_n_voters_strategy == 'both':
+                train_dataset = self.train_dataset_both
+            else:
+                raise ValueError(f"Unknown low_n_voters_strategy: {self.hparams.low_n_voters_strategy}")
+            shuffle = True
+            sampler = None
+            collate_fn = hms_collate_fn
+        else:
+            # Both datasets are used for training
+            # simultaneously
+            train_dataset = ZipDataset(
+                [self.train_dataset_low, self.train_dataset_high]
+            )
+            shuffle = False
+
+            # Sampler:
+            sampler = ZipRandomSampler(
+                lengths=[
+                    len(self.train_dataset_low), 
+                    len(self.train_dataset_high)
+                ]
+            )
+            collate_fn = hms_zip_collate_fn
+            
         return DataLoader(
-            dataset=self.train_dataset, 
+            dataset=train_dataset, 
             batch_size=self.hparams.batch_size, 
             num_workers=self.hparams.num_workers,
             pin_memory=self.hparams.pin_memory, 
             prefetch_factor=self.hparams.prefetch_factor,
             persistent_workers=self.hparams.persistent_workers,
-            shuffle=True,
+            sampler=sampler,
+            shuffle=shuffle,
             drop_last=True,
-            collate_fn=hms_collate_fn,
+            collate_fn=collate_fn,
         )
 
     def val_dataloader(self) -> DataLoader:

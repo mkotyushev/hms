@@ -2,6 +2,7 @@ import joblib
 import logging
 import numpy as np
 import pandas as pd
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,8 +15,8 @@ from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
 from pathlib import Path
 from PIL import Image
 from tqdm.auto import tqdm
-from torch.utils.data import default_collate
-from typing import Dict, List, Literal, Tuple
+from torch.utils.data import default_collate, Sampler
+from typing import Dict, List, Literal, Tuple, Iterator
 from weakref import proxy
 
 from src.data.constants import (
@@ -47,6 +48,11 @@ class MyLightningCLI(LightningCLI):
         if 'fit' in self.config and self.config['fit']['model']['init_args']['lr'] is not None:
             self.config['fit']['model']['init_args']['optimizer_init']['init_args']['lr'] = \
                 self.config['fit']['model']['init_args']['lr']
+
+        # If consistency mode used, check if it is correct
+        if 'fit' in self.config:
+            if self.config['fit']['model']['init_args']['consistency_loss_lambda'] is not None:
+                assert self.config['fit']['data']['init_args']['low_n_voters_strategy'] == 'simultaneous'
 
 
 class TrainerWandb(Trainer):
@@ -450,3 +456,33 @@ class HmsPredictionWriter(BasePredictionWriter):
 
         # Save
         df.to_csv(self.output_filepath, index=False)
+
+
+class ZipDataset:
+    def __init__(self, datasets):
+        self.datasets = datasets
+
+    def __getitem__(self, indices):
+        return tuple(dataset[index] for index, dataset in zip(indices, self.datasets))
+
+    def __len__(self):
+        return min(len(dataset) for dataset in self.datasets)
+
+
+class ZipRandomSampler(Sampler[List[int]]):
+    def __init__(self, lengths: List[int]):
+        self.indices_per_dataset = [range(length) for length in lengths]
+    
+    def __iter__(self) -> Iterator[List[int]]:
+        yield from zip(*[random.sample(indices, k=len(self)) for indices in self.indices_per_dataset])
+
+    def __len__(self):
+        return min(len(indices) for indices in self.indices_per_dataset)
+
+
+def hms_zip_collate_fn(zip_batch):
+    """Collate function for hoa zip dataset.
+    zip_batch: list of tuples of dicts of key:str, value: np.ndarray | list | None
+    output: list of dicts of torch.Tensor
+    """
+    return [hms_collate_fn(batch) for batch in zip(*zip_batch)]
