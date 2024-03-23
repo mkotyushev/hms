@@ -475,6 +475,7 @@ class HmsModule(BaseModule):
             # For low: compute consistency loss between 
             # predictions on 'image' and 'image_aux'
             # freezing the model for one of them
+            batch_low.pop('label')
 
             # First
             _, _, preds_image = self._compute_loss_preds(batch_low, **kwargs)
