@@ -168,6 +168,7 @@ class Subrecord:
             spectrogram_for_50_sec_len = (EED_N_SAMPLES - MEL_N_FFT) // MEL_HOP_LENGTH + 1
             eeg_spectrogram_stop_index = eeg_spectrogram_start_index + spectrogram_for_50_sec_len
             eeg_spectrogram = eeg_spectrogram[:, eeg_spectrogram_start_index:eeg_spectrogram_stop_index]
+            eeg_spectrogram = eeg_spectrogram.astype(np.float32) / 255.0
 
         # Put back to item
         item['eeg'] = eeg
@@ -296,7 +297,7 @@ class Normalize:
         spectrogram = np.log10(spectrogram + self.eps)
         min_, max_ = np.quantile(spectrogram, 0.01), np.quantile(spectrogram, 0.99)
         spectrogram = np.clip(spectrogram, min_, max_)
-        spectrogram = ((spectrogram - min_) / (max_ - min_) * 255).astype(np.uint8)
+        spectrogram = (spectrogram - min_) / (max_ - min_)
         
         item['spectrogram'] = spectrogram
         
@@ -382,10 +383,10 @@ class ToImage:
             else:
                 plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :320])
 
-        img = np.zeros((640, 640), dtype=np.uint8)
+        img = np.zeros((640, 640), dtype=np.float32)
 
         img_array = np.clip(img_array, 0, 255)
-        img_array = img_array.astype(np.uint8)
+        img_array = img_array / 255.0
         img[:16 * len(EEG_DIFF_COL_INDICES), :320] = img_array[..., 3]
 
         # 10 minutes spectrogram

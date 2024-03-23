@@ -20,8 +20,6 @@ from src.data.transforms import (
     Normalize,
     Unsqueeze,
     RandomLrFlip,
-    TrivialAugmentWideWrapper,
-    To01,
 )
 from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
@@ -113,7 +111,6 @@ class HmsDatamodule(LightningDataModule):
                     p=0.5,
                 ),
                 *resize_transform,
-                To01(),
                 Unsqueeze(),
             ]
         )
@@ -125,7 +122,6 @@ class HmsDatamodule(LightningDataModule):
                 ),
                 ToImage(),
                 *resize_transform,
-                To01(),
                 Unsqueeze(),
             ]
         )
