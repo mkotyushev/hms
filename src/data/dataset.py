@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from copy import deepcopy
 from tqdm.auto import tqdm
 from pathlib import Path
 from typing import Callable, Dict
@@ -19,7 +20,9 @@ class HmsDataset:
         spectrogram_dirpath: Path, 
         eeg_spectrograms: Dict[str, np.ndarray] | None = None, 
         pre_transform: Callable | None = None,
+        select_transform: Callable | None = None,
         transform: Callable | None = None,
+        transform_low_n_voters_twice: bool = False,
         cache: Dict[Path, pd.DataFrame] | None = None,
         by_subrecord: bool = False,
     ):
@@ -28,10 +31,12 @@ class HmsDataset:
         self.spectrogram_dirpath = spectrogram_dirpath
         self.eeg_spectrograms = eeg_spectrograms
         self.pre_transform = pre_transform
+        self.select_transform = select_transform
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
         self.cache = cache
         self.by_subrecord = by_subrecord
+        self.transform_low_n_voters_twice = transform_low_n_voters_twice
         if self.cache is not None:
             self.populate_cache()
 
@@ -79,9 +84,25 @@ class HmsDataset:
             'n_subrecords': n_subrecords,
         }
 
+        # Apply select transform
+        if self.select_transform is not None:
+            item = self.select_transform(**item)
+
         # Apply transform
-        if self.transform is not None:
-            item = self.transform(**item)
+        if not self.transform_low_n_voters_twice:
+            if self.transform is not None:
+                item = self.transform(**item)
+        else:
+            n_voters = item['meta']['n_voters'].iloc[0]
+            if n_voters <= 7:
+                if self.transform is not None:
+                    item1 = self.transform(**deepcopy(item))
+                    item2 = self.transform(**deepcopy(item))
+                    item = item1
+                    item['image_aux'] = item2['image'] 
+            else:
+                if self.transform is not None:
+                    item = self.transform(**item)
 
         return item
 

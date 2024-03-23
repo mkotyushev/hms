@@ -112,6 +112,7 @@ data:
     low_n_voters_strategy: keep
     by_subrecord: false
     test_is_train: false
+    transform_low_n_voters_twice: false
     img_size: null
     cache_dir: /workspace/data_external/.cache
     batch_size: 32

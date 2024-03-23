@@ -48,6 +48,7 @@ class HmsDatamodule(LightningDataModule):
         low_n_voters_strategy: Literal['keep', 'pl'] | None = None,
         by_subrecord: bool = False,
         test_is_train: bool = False,
+        transform_low_n_voters_twice: bool = False,
         img_size: Optional[int] = None,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
@@ -67,8 +68,11 @@ class HmsDatamodule(LightningDataModule):
         self.val_dataset = None
         self.test_dataset = None
 
+        self.train_select_transform = None
         self.train_transform = None
+        self.val_select_transform = None
         self.val_transform = None
+        self.test_select_transform = None
         self.test_transform = None
         self.pre_transform = None
 
@@ -78,9 +82,9 @@ class HmsDatamodule(LightningDataModule):
         resize_transform = []
         if self.hparams.img_size is not None:
             resize_transform = [A.Resize(self.hparams.img_size, self.hparams.img_size)]
+        self.train_select_transform = RandomSubrecord(mode=self.hparams.random_subrecord_mode)
         self.train_transform = A.Compose(
             [
-                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 Normalize(
                     eps=1e-6
                 ),
@@ -107,9 +111,9 @@ class HmsDatamodule(LightningDataModule):
                 Unsqueeze(),
             ]
         )
+        self.val_select_transform = self.test_select_transform = CenterSubrecord()
         self.val_transform = self.test_transform = A.Compose(
             [
-                CenterSubrecord(),
                 Normalize(
                     eps=1e-6
                 ),
@@ -333,7 +337,9 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
+                select_transform=self.train_select_transform,
                 transform=self.train_transform,
+                transform_low_n_voters_twice=self.hparams.transform_low_n_voters_twice,
                 cache=self.cache,
                 by_subrecord=self.hparams.by_subrecord,
             )
@@ -345,7 +351,9 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
+                select_transform=self.val_select_transform,
                 transform=self.val_transform,
+                transform_low_n_voters_twice=False,  # only for train
                 cache=self.cache,
                 by_subrecord=False,  # val is always with center subrecord
             )
@@ -360,7 +368,9 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=spectrogram_dirpath,
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
+                select_transform=self.test_select_transform,
                 transform=self.test_transform,
+                transform_low_n_voters_twice=False,  # only for train
                 cache=self.cache,
                 # test is always by subrecord: 
                 # either single subrecord for kaggle or 
