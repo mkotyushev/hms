@@ -123,6 +123,9 @@ class BaseModule(LightningModule):
                 param.requires_grad = selected
 
     def training_step(self, batch, batch_idx, **kwargs):
+        # Cover both single and multiple dataloaders case
+        batch_size = batch['eeg'].shape[0] if isinstance(batch, dict) else batch[0]['eeg'].shape[0]
+
         total_loss, losses, preds = self.compute_loss_preds(batch, **kwargs)
         for loss_name, loss in losses.items():
             self.log(
@@ -131,7 +134,7 @@ class BaseModule(LightningModule):
                 on_step=True,
                 on_epoch=True,
                 prog_bar=True,
-                batch_size=batch['eeg'].shape[0],
+                batch_size=batch_size,
             )
         self.update_metrics('train_metrics', preds, batch)
 
@@ -392,6 +395,7 @@ class HmsModule(BaseModule):
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
+        consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
         lr=None,
@@ -417,7 +421,7 @@ class HmsModule(BaseModule):
             self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
             patch_first_conv(self.model, in_chans)
         
-    def compute_loss_preds(self, batch, *args, **kwargs):
+    def _compute_loss_preds(self, batch, image_key='image', *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
         weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
 
@@ -430,7 +434,7 @@ class HmsModule(BaseModule):
                 x_s, x_e = None, batch['eeg']
             preds = self.model(x_s, x_e)
         else:
-            preds = self.model(batch['image'])
+            preds = self.model(batch[image_key])
 
         if 'label' not in batch:
             return None, dict(), preds
@@ -456,6 +460,48 @@ class HmsModule(BaseModule):
             'kld': kld
         }
         return sum(losses.values()), losses, preds
+    
+    def compute_loss_preds(self, batch, *args, **kwargs):
+        if isinstance(batch, dict):
+            # Simply compute loss and preds
+            total_loss, losses, preds = self._compute_loss_preds(batch, **kwargs)
+        else:
+            # Multiple dataloaders case: pseudo-labeling
+            assert self.hparams.consistency_loss_lambda is not None, \
+                'Multiple dataloaders are supported only with consistency mode enabled.'
+            
+            batch_low, batch_high = batch
+
+            # For low: compute consistency loss between 
+            # predictions on 'image' and 'image_aux'
+            # freezing the model for one of them
+            batch_low.pop('label')
+
+            # First
+            _, _, preds_image = self._compute_loss_preds(batch_low, **kwargs)
+
+            # Second
+            with torch.no_grad():
+                for param in self.model.parameters():
+                    param.requires_grad = False
+                _, _, preds_image_aux = self._compute_loss_preds(batch_low, image_key='image_aux', **kwargs)
+                preds_image = preds_image.detach()
+                for param in self.model.parameters():
+                    param.requires_grad = True
+
+            consistency_loss = F.kl_div(
+                F.log_softmax(preds_image, dim=1),
+                F.softmax(preds_image_aux, dim=1),
+                log_target=False,
+                reduction='batchmean',
+            )
+
+            # For high: compute as usual
+            cls_loss, losses, preds = self._compute_loss_preds(batch_high, **kwargs)
+            losses['consistency'] = consistency_loss
+            total_loss = cls_loss + self.hparams.consistency_loss_lambda * consistency_loss
+
+        return total_loss, losses, preds
 
     def training_step(self, batch, batch_idx, **kwargs):
         train_kwargs = {

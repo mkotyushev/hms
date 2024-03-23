@@ -73,6 +73,7 @@ model:
       cheap_cross: false
       pool: cls
       use: all
+    consistency_loss_lambda: null
     weight_by_n_voters: false
     weight_by_inv_n_subrecords: false
     optimizer_init: 
@@ -109,7 +110,7 @@ data:
     n_splits: 5
     random_subrecord_mode: discrete
     label_smoothing_n_voters: null
-    low_n_voters_strategy: keep
+    low_n_voters_strategy: high
     by_subrecord: false
     test_is_train: false
     img_size: null
