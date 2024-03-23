@@ -354,6 +354,9 @@ class HmsDatamodule(LightningDataModule):
             if self.hparams.test_is_train:
                 eeg_dirpath = self.hparams.dataset_dirpath / 'train_eegs'
                 spectrogram_dirpath = self.hparams.dataset_dirpath / 'train_spectrograms'
+            else:
+                eeg_dirpath = self.hparams.dataset_dirpath / 'test_eegs'
+                spectrogram_dirpath = self.hparams.dataset_dirpath / 'test_spectrograms'
             self.test_dataset = HmsDataset(
                 df_meta_test,
                 eeg_dirpath=eeg_dirpath,
