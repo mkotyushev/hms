@@ -115,7 +115,6 @@ class HmsDatamodule(LightningDataModule):
                     mask_fill_value=0, 
                     p=0.5,
                 ),
-                TrivialAugmentWideWrapper(),
                 *resize_transform,
                 To01(),
                 Unsqueeze(),
