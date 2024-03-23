@@ -87,8 +87,8 @@ class HmsDataset:
             if not self.do_aux_transform:
                 item = self.transform(**item)
             else:
-                item1 = self.transform(**deepcopy(item))
-                item2 = self.transform(**deepcopy(item))
+                item1 = self.transform(**item)
+                item2 = self.transform(**item)
                 item = item1
                 item['image_aux'] = item2['image']
 
