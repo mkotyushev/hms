@@ -30,6 +30,7 @@ from src.utils.utils import (
     hms_zip_collate_fn,
     ZipDataset,
     ZipRandomSampler,
+    keep_only_eq_to_most_frequent,
 )
 from src.data.pretransform import Pretransform, build_gaussianize
 
@@ -53,6 +54,7 @@ class HmsDatamodule(LightningDataModule):
         by_subrecord: bool = False,
         test_is_train: bool = False,
         img_size: Optional[int] = None,
+        drop_non_consensus: bool = False,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         num_workers: int = 0,
@@ -73,13 +75,8 @@ class HmsDatamodule(LightningDataModule):
         self.val_dataset = None
         self.test_dataset = None
 
-        self.train_select_transform = None
         self.train_transform = None
-
-        self.val_select_transform = None
         self.val_transform = None
-
-        self.test_select_transform = None
         self.test_transform = None
 
         self.pre_transform = None
@@ -90,9 +87,9 @@ class HmsDatamodule(LightningDataModule):
         resize_transform = []
         if self.hparams.img_size is not None:
             resize_transform = [A.Resize(self.hparams.img_size, self.hparams.img_size)]
-        self.train_select_transform = RandomSubrecord(mode=self.hparams.random_subrecord_mode)
         self.train_transform = A.Compose(
             [
+                RandomSubrecord(mode=self.hparams.random_subrecord_mode),
                 Normalize(
                     eps=1e-6
                 ),
@@ -120,9 +117,9 @@ class HmsDatamodule(LightningDataModule):
                 Unsqueeze(),
             ]
         )
-        self.val_select_transform = self.test_select_transform = CenterSubrecord()
         self.val_transform = self.test_transform = A.Compose(
             [
+                CenterSubrecord(),
                 Normalize(
                     eps=1e-6
                 ),
@@ -308,6 +305,20 @@ class HmsDatamodule(LightningDataModule):
             ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
         ]
 
+        # Keep only rows with labels equal to 
+        # the most frequent labels in EEG
+        if self.hparams.drop_non_consensus:
+            logger.info(
+                f'Before filtering non-consensus: '
+                f'{df_meta_train_low.shape[0]}, {df_meta_train_high.shape[0]}'
+            )
+            df_meta_train_low = keep_only_eq_to_most_frequent(df_meta_train_low)
+            df_meta_train_high = keep_only_eq_to_most_frequent(df_meta_train_high)
+            logger.info(
+                f'After filtering non-consensus: '
+                f'{df_meta_train_low.shape[0]}, {df_meta_train_high.shape[0]}'
+            )
+
         # Apply label smoothing
         # Note: label smoothing is not applied to pseudolabels
         df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
@@ -321,7 +332,6 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
-                select_transform=self.train_select_transform,
                 transform=self.train_transform,
                 # simultaneous trainig is used for training with consistency loss
                 # which involves applying two different transformation
@@ -338,7 +348,6 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
-                select_transform=self.train_select_transform,
                 transform=self.train_transform,
                 do_aux_transform=False,  # only for low
                 cache=self.cache,
@@ -352,7 +361,6 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
-                select_transform=self.train_select_transform,
                 transform=self.train_transform,
                 do_aux_transform=False,  # only for low
                 cache=self.cache,
@@ -366,7 +374,6 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=self.hparams.dataset_dirpath / 'train_spectrograms',
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
-                select_transform=self.val_select_transform,
                 transform=self.val_transform,
                 do_aux_transform=False,  # only for low
                 cache=self.cache,
@@ -386,7 +393,6 @@ class HmsDatamodule(LightningDataModule):
                 spectrogram_dirpath=spectrogram_dirpath,
                 eeg_spectrograms=eeg_spectrograms,
                 pre_transform=self.pre_transform,
-                select_transform=self.test_select_transform,
                 transform=self.test_transform,
                 do_aux_transform=False,  # only for low
                 cache=self.cache,

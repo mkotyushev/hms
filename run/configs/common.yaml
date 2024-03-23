@@ -114,6 +114,7 @@ data:
     by_subrecord: false
     test_is_train: false
     img_size: null
+    drop_non_consensus: false
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     num_workers: 8

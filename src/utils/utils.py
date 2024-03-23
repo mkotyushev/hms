@@ -486,3 +486,17 @@ def hms_zip_collate_fn(zip_batch):
     output: list of dicts of torch.Tensor
     """
     return [hms_collate_fn(batch) for batch in zip(*zip_batch)]
+
+
+def get_most_frequent_row(x):
+    x = np.stack(x.values)
+    unique, unique_counts = np.unique(x, axis=0, return_counts=True)
+    return unique[unique_counts.argmax()]
+
+
+def keep_only_eq_to_most_frequent(df):
+    df['labels'] = df[LABEL_COLS_ORDERED].apply(lambda x: x.values, axis=1)
+    df['is_eq_to_most_frequent'] = df \
+        .groupby(['eeg_id'])['labels'] \
+        .transform(lambda x: (np.stack(x) == get_most_frequent_row(x)).all(axis=1))
+    return df[df['is_eq_to_most_frequent']].drop(columns=['is_eq_to_most_frequent', 'labels'])

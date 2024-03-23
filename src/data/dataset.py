@@ -20,7 +20,6 @@ class HmsDataset:
         spectrogram_dirpath: Path, 
         eeg_spectrograms: Dict[str, np.ndarray] | None = None, 
         pre_transform: Callable | None = None,
-        select_transform: Callable | None = None,
         transform: Callable | None = None,
         do_aux_transform: bool = False,
         cache: Dict[Path, pd.DataFrame] | None = None,
@@ -31,7 +30,6 @@ class HmsDataset:
         self.spectrogram_dirpath = spectrogram_dirpath
         self.eeg_spectrograms = eeg_spectrograms
         self.pre_transform = pre_transform
-        self.select_transform = select_transform
         self.transform = transform
         self.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(df_meta['eeg_id'].unique()))}
         self.cache = cache
@@ -83,10 +81,6 @@ class HmsDataset:
             'meta': df,
             'n_subrecords': n_subrecords,
         }
-
-        # Apply select transform
-        if self.select_transform is not None:
-            item = self.select_transform(**item)
 
         # Apply transform
         if self.transform is not None:
