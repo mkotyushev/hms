@@ -1,6 +1,7 @@
 import logging
 import torch
 import timm
+import torch.nn as nn
 from lightning import LightningModule
 from typing import Any, Dict, Optional, Union, Literal
 from torch import Tensor
@@ -16,6 +17,51 @@ from src.utils.mechanic import mechanize
 
 
 logger = logging.getLogger(__name__)
+
+
+class ExpertsLinearEnsemble(nn.Module):
+    def __init__(self, backbone, emb_dim, n_classes=6, n_experts=124):
+        super().__init__()
+        self.backbone = backbone
+        self.classifier = nn.Linear(emb_dim, n_classes * n_experts)
+        self.which_expert = nn.Linear(emb_dim, n_experts)
+        self.expert_weights = nn.Linear(emb_dim, n_experts)
+    
+    def forward(self, x, n_experts):
+        # Embedding
+        # emb.shape = (batch_size, emb_dim)
+        emb = self.backbone(x)
+
+        # Weight experts
+        # expert_weights.shape = (batch_size, n_experts)
+        expert_weights = self.expert_weights(emb)
+        expert_weights = F.softmax(expert_weights, dim=1)
+
+        # Classify
+        # expert_logits.shape = (batch_size, n_experts, n_classes)
+        expert_logits = self.classifier(emb).view(-1, n_experts, -1)
+
+        # Select top n_experts experts
+        # which_expert.shape = (batch_size, n_experts)
+        which_expert = self.which_expert(emb)
+        which_expert = F.softmax(which_expert, dim=1)
+        which_expert = torch.topk(which_expert, n_experts, dim=1).indices
+        
+        expert_logits = expert_logits * expert_weights
+        expert_logits = expert_logits[torch.arange(emb.shape[0])[:, None], which_expert]
+        expert_logits = expert_logits.mean(dim=1)
+
+        return expert_logits
+
+        
+# class ExpertsAttnEnsemble(nn.Module):
+#     def __init__(self, backbone, emb_dim, n_classes=6, n_experts=124):
+#         super().__init__()
+#         self.backbone = backbone
+#         self.expert_tokens = nn.Parameter(torch.randn(n_experts, emb_dim))
+#         self.classifier = nn.Linear(emb_dim, n_classes * n_experts)
+#         self.which_attention = nn.Linear(emb_dim, n_experts)
+#         self.expert_weights = nn.Linear(emb_dim, n_experts)
 
 
 class BaseModule(LightningModule):
@@ -395,6 +441,7 @@ class HmsModule(BaseModule):
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
+        expert_ensemble: bool = False,
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
@@ -417,9 +464,20 @@ class HmsModule(BaseModule):
                 **model_kwargs,
             )
         else:
+            if expert_ensemble:
+                num_classes = 0
+            else:
+                num_classes = N_CLASSES
             in_chans = model_kwargs.pop('in_chans', 3)
-            self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
+            self.model = timm.create_model(model, num_classes=num_classes, **model_kwargs)
             patch_first_conv(self.model, in_chans)
+            if expert_ensemble:
+                self.model = ExpertsLinearEnsemble(
+                    self.model, 
+                    emb_dim=self.model.num_features,
+                    n_classes=N_CLASSES,
+                    n_experts=124,
+                )
         
     def _compute_loss_preds(self, batch, image_key='image', *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
