@@ -37,36 +37,34 @@ class ExpertsLinearEnsemble(nn.Module):
     def forward(self, x, n_experts):
         B, *_ = x.shape
 
-        # Embedding
+        # Embed
         # emb.shape = (batch_size, emb_dim)
         emb = self.backbone(x)
-
-        # Weight experts
-        # expert_weights.shape = (batch_size, n_experts)
-        # TODO: check if which expert should be applied to expert_weights too
-        expert_weights = self.expert_weights(emb)
-        expert_weights = F.softmax(expert_weights, dim=1)
 
         # Classify
         # expert_logits.shape = (batch_size, n_experts, n_classes)
         expert_logits = self.classifier(emb).view(B, self.n_experts, -1)
 
+        # Weight experts
+        # expert_weights.shape = (batch_size, n_experts)
+        expert_weights = self.expert_weights(emb)
+        expert_weights = F.softmax(expert_weights, dim=1)
+        expert_logits = expert_logits * expert_weights[:, :, None]
+
         if self.training:
             # Select top n_experts experts
             # which_expert.shape = (batch_size, n_experts)
             which_expert = self.which_expert(emb)
-            which_expert = which_expert.masked_fill(
-                which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1), 
-                -float('inf') 
-            )
-            which_expert = F.softmax(which_expert, dim=1)
-            
-            expert_logits = expert_logits * expert_weights[:, :, None] * which_expert[:, :, None]
-            expert_logits = expert_logits.mean(dim=1)
-        else:
-            expert_logits = expert_logits * expert_weights[:, :, None]
-            expert_logits = expert_logits.mean(dim=1)
 
+            # Note: set logits of non-top experts to 0,
+            # sum and normalize by n_experts
+            expert_logits = expert_logits.masked_fill(
+                (which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1))[:, :, None],
+                0
+            )
+            expert_logits = expert_logits.sum(dim=1) / n_experts[:, None]
+        else:
+            expert_logits = expert_logits.mean(dim=1)
         return expert_logits
 
         
