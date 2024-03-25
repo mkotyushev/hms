@@ -444,7 +444,7 @@ class HmsModule(BaseModule):
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
-        expert_ensemble: bool = False,
+        n_experts: Optional[int] = None,
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
@@ -467,19 +467,19 @@ class HmsModule(BaseModule):
                 **model_kwargs,
             )
         else:
-            if expert_ensemble:
+            if n_experts is not None:
                 num_classes = 0
             else:
                 num_classes = N_CLASSES
             in_chans = model_kwargs.pop('in_chans', 3)
             self.model = timm.create_model(model, num_classes=num_classes, **model_kwargs)
             patch_first_conv(self.model, in_chans)
-            if expert_ensemble:
+            if n_experts is not None:
                 self.model = ExpertsLinearEnsemble(
                     self.model, 
                     emb_dim=self.model.num_features,
                     n_classes=N_CLASSES,
-                    n_experts=124,
+                    n_experts=n_experts,
                 )
         
     def _compute_loss_preds(self, batch, val=False, image_key='image', *args, **kwargs):
@@ -495,7 +495,7 @@ class HmsModule(BaseModule):
                 x_s, x_e = None, batch['eeg']
             preds = self.model(x_s, x_e)
         else:
-            if self.hparams.expert_ensemble:
+            if self.hparams.n_experts is not None:
                 if val:
                     n_voters = torch.full(batch[image_key].shape[0], 15, dtype=torch.int64, device=batch[image_key].device)
                 else:
@@ -511,7 +511,7 @@ class HmsModule(BaseModule):
             return None, dict(), preds
         
         # KL-divergence loss
-        if not self.hparams.expert_ensemble:
+        if self.hparams.n_experts is None:
             log_preds = F.log_softmax(preds, dim=1)
         else:
             log_preds = torch.log(torch.clamp(preds, min=1e-7))
