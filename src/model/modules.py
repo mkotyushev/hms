@@ -47,26 +47,25 @@ class ExpertsLinearEnsemble(nn.Module):
         expert_logits = self.classifier(emb).view(B, self.n_experts, -1)
 
         # Weight experts
-        # expert_weights.shape = (batch_size, n_experts)
-        expert_weights = self.expert_weights(emb)
-        expert_weights = F.softmax(expert_weights, dim=1)
-        expert_logits = expert_logits * expert_weights[:, :, None]
+        # expert_weight_logits.shape = (batch_size, n_experts)
+        expert_weight_logits = self.expert_weights(emb)
 
         if self.training:
             # Select top n_experts experts
             # which_expert.shape = (batch_size, n_experts)
             which_expert = self.which_expert(emb)
-
-            # Note: set logits of non-top experts to 0,
-            # sum and normalize by n_experts
-            expert_logits = expert_logits.masked_fill(
-                (which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1))[:, :, None],
-                0
+            mask = (which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1))
+            expert_weight_logits = expert_weight_logits.masked_fill(
+                mask,
+                -float('inf'),
             )
-            expert_logits = expert_logits.sum(dim=1) / n_experts[:, None]
-        else:
-            expert_logits = expert_logits.mean(dim=1)
-        return expert_logits
+
+        expert_proba = F.softmax(expert_logits, dim=2)
+        expert_weights = F.softmax(expert_weight_logits, dim=1)
+        expert_proba = expert_proba * expert_weights[:, :, None]
+        expert_proba = expert_proba.sum(dim=1) / expert_weights.sum(dim=1)[:, None]
+        
+        return expert_proba
 
 
 class BaseModule(LightningModule):
@@ -509,7 +508,10 @@ class HmsModule(BaseModule):
             return None, dict(), preds
         
         # KL-divergence loss
-        log_preds = F.log_softmax(preds, dim=1)
+        if not self.hparams.expert_ensemble:
+            log_preds = F.log_softmax(preds, dim=1)
+        else:
+            log_preds = torch.log(torch.clamp(preds, min=1e-7))
         target = batch['label']
         kld = F.kl_div(
             log_preds, 
