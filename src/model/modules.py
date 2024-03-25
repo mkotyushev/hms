@@ -7,6 +7,7 @@ from lightning import LightningModule
 from typing import Any, Dict, Optional, Union, Literal
 from lightning.pytorch.cli import instantiate_class
 from lightning.pytorch.utilities import grad_norm
+from pathlib import Path
 from torch import Tensor
 from torchmetrics import Metric
 from timm.layers import Mlp
@@ -446,6 +447,7 @@ class HmsModule(BaseModule):
         self,
         model: str = 'hms_classifier',
         model_kwargs=None,
+        ckpt_path_to_ft: Optional[Path] = None,
         n_experts: Optional[int] = None,
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
@@ -483,6 +485,11 @@ class HmsModule(BaseModule):
                     n_classes=N_CLASSES,
                     n_experts=n_experts,
                 )
+        
+        # Only load state_dict not optimizer state etc.
+        if ckpt_path_to_ft is not None:
+            state_dict = torch.load(ckpt_path_to_ft)['state_dict']
+            self.load_state_dict(state_dict)
         
     def _compute_loss_preds(self, batch, val=False, image_key='image', *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
