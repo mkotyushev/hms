@@ -52,8 +52,10 @@ class ExpertsLinearEnsemble(nn.Module):
 
         # Select top n_experts experts
         # which_expert.shape = (batch_size, n_experts)
+        n_experts[n_experts > self.n_experts] = self.n_experts
         which_expert = self.which_expert(emb)
-        mask = (which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1))
+        threshold = kth_largest(which_expert, n_experts - 1).unsqueeze(1)
+        mask = (which_expert < threshold)
         expert_weight_logits = expert_weight_logits.masked_fill(
             mask,
             -float('inf'),
