@@ -51,17 +51,21 @@ class ExpertsLinearEnsemble(nn.Module):
         # expert_logits.shape = (batch_size, n_experts, n_classes)
         expert_logits = self.classifier(emb).view(B, self.n_experts, -1)
 
-        # Select top n_experts experts
-        # which_expert.shape = (batch_size, n_experts)
-        which_expert = self.which_expert(emb)
-        which_expert = which_expert.masked_fill(
-            which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1), 
-            -float('inf') 
-        )
-        which_expert = F.softmax(which_expert, dim=1)
-        
-        expert_logits = expert_logits * expert_weights[:, :, None] * which_expert[:, :, None]
-        expert_logits = expert_logits.mean(dim=1)
+        if self.training:
+            # Select top n_experts experts
+            # which_expert.shape = (batch_size, n_experts)
+            which_expert = self.which_expert(emb)
+            which_expert = which_expert.masked_fill(
+                which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1), 
+                -float('inf') 
+            )
+            which_expert = F.softmax(which_expert, dim=1)
+            
+            expert_logits = expert_logits * expert_weights[:, :, None] * which_expert[:, :, None]
+            expert_logits = expert_logits.mean(dim=1)
+        else:
+            expert_logits = expert_logits * expert_weights[:, :, None]
+            expert_logits = expert_logits.mean(dim=1)
 
         return expert_logits
 
