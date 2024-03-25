@@ -2,13 +2,14 @@ import logging
 import torch
 import timm
 import torch.nn as nn
+import torch.nn.functional as F
 from lightning import LightningModule
 from typing import Any, Dict, Optional, Union, Literal
-from torch import Tensor
-import torch.nn.functional as F
 from lightning.pytorch.cli import instantiate_class
-from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
+from torch import Tensor
+from torchmetrics import Metric
+from timm.layers import Mlp
 
 from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
@@ -29,9 +30,9 @@ class ExpertsLinearEnsemble(nn.Module):
     def __init__(self, backbone, emb_dim, n_classes=6, n_experts=124):
         super().__init__()
         self.backbone = backbone
-        self.classifier = nn.Linear(emb_dim, n_classes * n_experts)
-        self.which_expert = nn.Linear(emb_dim, n_experts)
-        self.expert_weights = nn.Linear(emb_dim, n_experts)
+        self.classifier = Mlp(in_features=emb_dim, out_features=n_classes * n_experts)
+        self.which_expert = Mlp(in_features=emb_dim, out_features=n_experts)
+        self.expert_weights = Mlp(in_features=emb_dim, out_features=n_experts)
         self.n_experts = n_experts
     
     def forward(self, x, n_experts):
@@ -66,16 +67,6 @@ class ExpertsLinearEnsemble(nn.Module):
         else:
             expert_logits = expert_logits.mean(dim=1)
         return expert_logits
-
-        
-# class ExpertsAttnEnsemble(nn.Module):
-#     def __init__(self, backbone, emb_dim, n_classes=6, n_experts=124):
-#         super().__init__()
-#         self.backbone = backbone
-#         self.expert_tokens = nn.Parameter(torch.randn(n_experts, emb_dim))
-#         self.classifier = nn.Linear(emb_dim, n_classes * n_experts)
-#         self.which_attention = nn.Linear(emb_dim, n_experts)
-#         self.expert_weights = nn.Linear(emb_dim, n_experts)
 
 
 class BaseModule(LightningModule):
