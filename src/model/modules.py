@@ -50,15 +50,14 @@ class ExpertsLinearEnsemble(nn.Module):
         # expert_weight_logits.shape = (batch_size, n_experts)
         expert_weight_logits = self.expert_weights(emb)
 
-        if self.training:
-            # Select top n_experts experts
-            # which_expert.shape = (batch_size, n_experts)
-            which_expert = self.which_expert(emb)
-            mask = (which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1))
-            expert_weight_logits = expert_weight_logits.masked_fill(
-                mask,
-                -float('inf'),
-            )
+        # Select top n_experts experts
+        # which_expert.shape = (batch_size, n_experts)
+        which_expert = self.which_expert(emb)
+        mask = (which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1))
+        expert_weight_logits = expert_weight_logits.masked_fill(
+            mask,
+            -float('inf'),
+        )
 
         expert_proba = F.softmax(expert_logits, dim=2)
         expert_weights = F.softmax(expert_weight_logits, dim=1)
@@ -483,7 +482,7 @@ class HmsModule(BaseModule):
                     n_experts=124,
                 )
         
-    def _compute_loss_preds(self, batch, image_key='image', *args, **kwargs):
+    def _compute_loss_preds(self, batch, val=False, image_key='image', *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
         weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
 
@@ -497,9 +496,13 @@ class HmsModule(BaseModule):
             preds = self.model(x_s, x_e)
         else:
             if self.hparams.expert_ensemble:
+                if val:
+                    n_voters = torch.full(batch[image_key].shape[0], 15, dtype=torch.int64, device=batch[image_key].device)
+                else:
+                    n_voters = torch.from_numpy(batch['meta']['n_voters'].values).to(batch[image_key].device)
                 preds = self.model(
                     batch[image_key], 
-                    torch.from_numpy(batch['meta']['n_voters'].values).to(batch[image_key].device)
+                    n_voters
                 )
             else:
                 preds = self.model(batch[image_key])
