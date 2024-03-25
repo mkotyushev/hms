@@ -532,17 +532,32 @@ class HmsModule(BaseModule):
             reduction='none',
         ).sum(1)
 
-        weight = torch.ones_like(kld)
+        if self.hparams.n_experts is None:
+            p = F.softmax(preds, dim=1)
+        else:
+            p = preds
+        mae = F.l1_loss(p, target, reduction='none').sum(1)
+        
+        n_voters = torch.from_numpy(batch['meta']['n_voters'].values).to(batch[image_key].device)
+        loss = torch.where(
+            n_voters <= 7,
+            mae,
+            kld,
+        )
+
+        weight = torch.ones_like(loss)
         if weight_by_n_voters:
-            weight *= torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
+            weight *= torch.from_numpy(batch['meta']['n_voters'].values).to(loss.device)
         if weight_by_inv_n_subrecords:
             weight /= batch['n_subrecords']
-        kld = (kld * weight).sum() / weight.sum()
+        loss = (loss * weight).sum() / weight.sum()
 
         losses = {
-            'kld': kld
+            'kld': kld.mean(),
+            'mae': mae.mean(),
+            'kld+mae': loss,
         }
-        return sum(losses.values()), losses, preds
+        return loss, losses, preds
     
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
