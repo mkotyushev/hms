@@ -19,6 +19,12 @@ from src.utils.mechanic import mechanize
 logger = logging.getLogger(__name__)
 
 
+# https://stackoverflow.com/a/60971234
+def kth_largest(tensor, indices):
+    tensor_sorted, _ = torch.sort(tensor, descending=True)
+    return tensor_sorted[torch.arange(len(indices)), indices]
+
+
 class ExpertsLinearEnsemble(nn.Module):
     def __init__(self, backbone, emb_dim, n_classes=6, n_experts=124):
         super().__init__()
@@ -26,29 +32,35 @@ class ExpertsLinearEnsemble(nn.Module):
         self.classifier = nn.Linear(emb_dim, n_classes * n_experts)
         self.which_expert = nn.Linear(emb_dim, n_experts)
         self.expert_weights = nn.Linear(emb_dim, n_experts)
+        self.n_experts = n_experts
     
     def forward(self, x, n_experts):
+        B, *_ = x.shape
+
         # Embedding
         # emb.shape = (batch_size, emb_dim)
         emb = self.backbone(x)
 
         # Weight experts
         # expert_weights.shape = (batch_size, n_experts)
+        # TODO: check if which expert should be applied to expert_weights too
         expert_weights = self.expert_weights(emb)
         expert_weights = F.softmax(expert_weights, dim=1)
 
         # Classify
         # expert_logits.shape = (batch_size, n_experts, n_classes)
-        expert_logits = self.classifier(emb).view(-1, n_experts, -1)
+        expert_logits = self.classifier(emb).view(B, self.n_experts, -1)
 
         # Select top n_experts experts
         # which_expert.shape = (batch_size, n_experts)
         which_expert = self.which_expert(emb)
+        which_expert = which_expert.masked_fill(
+            which_expert <= kth_largest(which_expert, n_experts).unsqueeze(1), 
+            -float('inf') 
+        )
         which_expert = F.softmax(which_expert, dim=1)
-        which_expert = torch.topk(which_expert, n_experts, dim=1).indices
         
-        expert_logits = expert_logits * expert_weights
-        expert_logits = expert_logits[torch.arange(emb.shape[0])[:, None], which_expert]
+        expert_logits = expert_logits * expert_weights[:, :, None] * which_expert[:, :, None]
         expert_logits = expert_logits.mean(dim=1)
 
         return expert_logits
@@ -492,7 +504,13 @@ class HmsModule(BaseModule):
                 x_s, x_e = None, batch['eeg']
             preds = self.model(x_s, x_e)
         else:
-            preds = self.model(batch[image_key])
+            if self.hparams.expert_ensemble:
+                preds = self.model(
+                    batch[image_key], 
+                    torch.from_numpy(batch['meta']['n_voters'].values).to(batch[image_key].device)
+                )
+            else:
+                preds = self.model(batch[image_key])
 
         if 'label' not in batch:
             return None, dict(), preds
