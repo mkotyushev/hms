@@ -1,3 +1,5 @@
+trainer:
+  accumulate_grad_batches: 4
 model:
   class_path: src.model.modules.HmsModule
   init_args:
