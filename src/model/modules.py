@@ -491,7 +491,7 @@ class HmsModule(BaseModule):
             state_dict = torch.load(ckpt_path_to_ft)['state_dict']
             self.load_state_dict(state_dict)
         
-    def _compute_loss_preds(self, batch, val=False, image_key='image', *args, **kwargs):
+    def _compute_loss_preds(self, batch, val=True, image_key='image', *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
         weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
 
@@ -506,7 +506,7 @@ class HmsModule(BaseModule):
         else:
             if self.hparams.n_experts is not None:
                 if val:
-                    n_voters = torch.full(batch[image_key].shape[0], 15, dtype=torch.int64, device=batch[image_key].device)
+                    n_voters = torch.full((batch[image_key].shape[0],), 15, dtype=torch.int64, device=batch[image_key].device)
                 else:
                     n_voters = torch.from_numpy(batch['meta']['n_voters'].values).to(batch[image_key].device)
                 preds = self.model(
@@ -605,6 +605,7 @@ class HmsModule(BaseModule):
         train_kwargs = {
             'weight_by_n_voters': self.hparams.weight_by_n_voters,
             'weight_by_inv_n_subrecords': self.hparams.weight_by_inv_n_subrecords,
+            'val': False,
         }
         return super().training_step(batch, batch_idx, **{**kwargs, **train_kwargs})
 
