@@ -449,6 +449,7 @@ class HmsModule(BaseModule):
         model_kwargs=None,
         ckpt_path_to_ft: Optional[Path] = None,
         n_experts: Optional[int] = None,
+        n_experts_val_test: Optional[int] = None,
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
@@ -460,6 +461,9 @@ class HmsModule(BaseModule):
 
         if model_kwargs is None:
             model_kwargs = dict()
+
+        if n_experts is not None and n_experts_val_test is None:
+            n_experts_val_test = n_experts
 
         if model == 'hms_classifier':
             self.model = HmsClassifier(
@@ -506,7 +510,7 @@ class HmsModule(BaseModule):
         else:
             if self.hparams.n_experts is not None:
                 if val:
-                    n_voters = torch.full((batch[image_key].shape[0],), 15, dtype=torch.int64, device=batch[image_key].device)
+                    n_voters = torch.full((batch[image_key].shape[0],), self.hparams.n_experts_val_test, dtype=torch.int64, device=batch[image_key].device)
                 else:
                     n_voters = torch.from_numpy(batch['meta']['n_voters'].values).to(batch[image_key].device)
                 preds = self.model(
