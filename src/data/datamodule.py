@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 import yaml
 import albumentations as A
-import torch
+from collections import Counter
 from pathlib import Path
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Literal
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from sklearn.model_selection import StratifiedGroupKFold
 
 from src.data.dataset import HmsDataset
@@ -48,6 +48,7 @@ class HmsDatamodule(LightningDataModule):
         clip_eeg: bool = True,
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['low', 'high', 'both', 'simultaneous'] = 'high',
+        low_n_voters_sample_strategy: Optional[Literal['min', 'max', 'eq']] = None,
         by_subrecord: bool = False,
         test_is_train: bool = False,
         img_size: Optional[int] = None,
@@ -403,9 +404,33 @@ class HmsDatamodule(LightningDataModule):
                 train_dataset = self.train_dataset_both
             else:
                 raise ValueError(f"Unknown low_n_voters_strategy: {self.hparams.low_n_voters_strategy}")
+            
             shuffle = True
             sampler = None
             collate_fn = hms_collate_fn
+
+            if self.hparams.low_n_voters_strategy == 'both' and self.hparams.low_n_voters_sample_strategy is not None:
+                if self.hparams.by_subrecord:
+                    low_n_voters = train_dataset.df_meta['n_voters'] <= 7
+                else:
+                    low_n_voters = [train_dataset.df_meta[train_dataset.df_meta['eeg_id'] == eeg_id]['n_voters'].iloc[0] <= 7 for _, eeg_id in train_dataset.index_to_eeg_id.items()]
+                
+                counter = Counter(low_n_voters)
+                weights = [1 / counter[value] for value in low_n_voters]
+                
+                if self.hparams.low_n_voters_sample_strategy == 'min':
+                    num_samples = min(counter.values()) * 2
+                elif self.hparams.low_n_voters_sample_strategy == 'max':
+                    num_samples = max(counter.values()) * 2
+                elif self.hparams.low_n_voters_sample_strategy == 'eq':
+                    num_samples = len(train_dataset)
+                
+                shuffle = False
+                sampler = WeightedRandomSampler(
+                    weights=weights,
+                    num_samples=num_samples,
+                    replacement=True,
+                )
         else:
             # Both datasets are used for training
             # simultaneously

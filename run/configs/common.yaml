@@ -112,6 +112,7 @@ data:
     random_subrecord_mode: discrete
     label_smoothing_n_voters: null
     low_n_voters_strategy: high
+    low_n_voters_sample_strategy: null
     by_subrecord: false
     test_is_train: false
     img_size: null
