@@ -1,0 +1,8 @@
+model:
+  init_args:
+    finetuning: 
+      unfreeze_layer_names_startswith: 
+        - model.blocks.11
+        - model.fc_norm
+        - model.head
+      unfreeze_before_epoch: 99

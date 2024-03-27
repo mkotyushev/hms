@@ -421,6 +421,8 @@ class HmsModule(BaseModule):
             self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
             patch_first_conv(self.model, in_chans)
         
+        self.unfreeze_only_selected()
+        
     def _compute_loss_preds(self, batch, image_key='image', *args, **kwargs):
         weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
         weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
