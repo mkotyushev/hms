@@ -398,6 +398,7 @@ class HmsModule(BaseModule):
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
+        w_other_rel: float = 1.0,
         lr=None,
         **base_kwargs,
     ):
@@ -449,7 +450,14 @@ class HmsModule(BaseModule):
             target,
             log_target=False,
             reduction='none',
-        ).sum(1)
+        )
+        kld_nonweighted = kld.sum(1)
+        w = torch.tensor([1] * 5 + [self.hparams.w_other_rel], dtype=kld.dtype, device=kld.device)
+        kld = torch.where(
+            torch.from_numpy(~(batch['meta']['expert_consensus'] == 'Other').values).to(kld.device),
+            (kld * w[None, :]).sum(1),
+            kld.sum(1)
+        )
 
         weight = torch.ones_like(kld)
         if weight_by_n_voters:
@@ -457,11 +465,13 @@ class HmsModule(BaseModule):
         if weight_by_inv_n_subrecords:
             weight /= batch['n_subrecords']
         kld = (kld * weight).sum() / weight.sum()
-
+        kld_nonweighted = (kld_nonweighted * weight).sum() / weight.sum()
         losses = {
-            'kld': kld
+            'kld': kld_nonweighted,
+            'kld_weighted': kld,
         }
-        return sum(losses.values()), losses, preds
+
+        return kld, losses, preds
     
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
