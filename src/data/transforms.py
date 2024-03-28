@@ -347,10 +347,10 @@ def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
 class ToImage:
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
-        img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 320, 4), dtype=np.uint16)
+        img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 640, 4), dtype=np.uint16)
 
         eeg = item['eeg']
-        subdf = eeg[4000:6000].T
+        subdf = eeg.T
         for i, cols in enumerate(EEG_DIFF_COL_INDICES):
             if len(cols) == 1:
                 y = subdf[cols[0]]
@@ -374,15 +374,15 @@ class ToImage:
             y[-1] = 1
 
             if i == 0:
-                plot_to_array(y, img_array[16 * i:16 * i + 16 + 8, :320])
+                plot_to_array(y, img_array[16 * i:16 * i + 16 + 8, :])
             elif i == len(EEG_DIFF_COL_INDICES) - 1:
-                plot_to_array(y, img_array[16 * i - 8:16 * i + 16, :320])
+                plot_to_array(y, img_array[16 * i - 8:16 * i + 16, :])
             else:
-                plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :320])
+                plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :])
 
         img_array = np.clip(img_array, 0, 255)
         img = np.zeros((640, 640), dtype=np.float32)
-        img[:16 * len(EEG_DIFF_COL_INDICES), :320] = img_array[..., 3] / 255.0
+        img[320:, :] = img_array[..., 3] / 255.0
 
         # 10 minutes spectrogram
         y = item['spectrogram']
@@ -393,8 +393,8 @@ class ToImage:
         # 50 seconds EEG spectrogram
         y = item['eeg_spectrogram']
         y = y.transpose(1, 2, 0).reshape(-1, y.shape[0] * y.shape[2])
-        y = cv2.resize(y, (640, 320))
-        img[320:, :] = y
+        y = cv2.resize(y, (320, 320))
+        img[:320, :320] = y
     
         item['image'] = img
         return item
