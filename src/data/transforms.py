@@ -20,6 +20,8 @@ from .constants import (
     EEG_LR_FLIP_REORDER_INDICES,
     EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES,
     EEG_DIFF_ABS_MAX,
+    LOG_SPECTROGRAM_MIN,
+    LOG_SPECTROGRAM_MAX,
 )
 
 
@@ -292,9 +294,8 @@ class Normalize:
         spectrogram = item['spectrogram']
         spectrogram[np.isnan(spectrogram)] = 0
         spectrogram = np.log10(spectrogram + self.eps)
-        min_, max_ = np.quantile(spectrogram, 0.01), np.quantile(spectrogram, 0.99)
-        spectrogram = np.clip(spectrogram, min_, max_)
-        spectrogram = (spectrogram - min_) / (max_ - min_)
+        spectrogram = np.clip(spectrogram, LOG_SPECTROGRAM_MIN, LOG_SPECTROGRAM_MAX)
+        spectrogram = (spectrogram - LOG_SPECTROGRAM_MIN) / (LOG_SPECTROGRAM_MAX - LOG_SPECTROGRAM_MIN)
         
         item['spectrogram'] = spectrogram
         
