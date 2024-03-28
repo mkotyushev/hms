@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument('meta_filepath', type=Path, help='Meta file path')
     parser.add_argument('eeg_dirpath', type=Path, help='EEGs dir path')
     parser.add_argument('output_filepath', type=Path, help='Output .npy file path')
+    parser.add_argument('--minmax', nargs='+', type=int)
     parser.add_argument('--debug', action='store_true', help='Debug mode, only use a subset of the data')
     return parser.parse_args()
 
@@ -114,16 +115,11 @@ def spectrograms_from_eeg(eeg):
             mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max).astype(np.float32)
 
             # STANDARDIZE TO -1 TO 1
-            mel_spec_db = (mel_spec_db+40)/40 
             img[:,:,k] += mel_spec_db
                 
         # AVERAGE THE 4 MONTAGE DIFFERENCES
         img[:,:,k] /= 4.0
     
-    # Convert to 8-bit
-    img = (img + 1) / 2 * 255
-    img = np.clip(img, 0, 255).astype(np.uint8)
-
     return img
 
 
@@ -148,7 +144,19 @@ def main(args):
     data = dict()
     for eeg_id in tqdm(sorted(df_meta['eeg_id'].unique())):
         df_eeg = pd.read_parquet(args.eeg_dirpath / f'{eeg_id}.parquet')
-        data[eeg_id] = spectrograms_from_eeg(df_eeg)
+        img = spectrograms_from_eeg(df_eeg)
+
+        # Convert to 8-bit
+        if args.minmax is None:
+            img = (img + 40) / 40 
+            img = (img + 1) / 2 * 255
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        else:
+            img = np.clip(img, args.minmax[0], args.minmax[1])
+            img = (img - args.minmax[0]) / (args.minmax[1] - args.minmax[0])
+            img = (img * 255).astype(np.uint8)
+
+        data[eeg_id] = img
 
     # Save
     logger.info(f'Saving {len(data)} 50s EEGs spectrograms to {args.output_filepath}')
