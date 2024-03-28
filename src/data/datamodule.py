@@ -53,6 +53,7 @@ class HmsDatamodule(LightningDataModule):
         img_size: Optional[int] = None,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
+        force_batch_size: bool = True,
         num_workers: int = 0,
         pin_memory: bool = False,
         prefetch_factor: int = 2,

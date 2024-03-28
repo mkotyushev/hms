@@ -54,6 +54,27 @@ class MyLightningCLI(LightningCLI):
             if self.config['fit']['model']['init_args']['consistency_loss_lambda'] is not None:
                 assert self.config['fit']['data']['init_args']['low_n_voters_strategy'] == 'simultaneous'
 
+        # Lower batch size for low-memory GPUs
+        if (
+            'fit' in self.config and 
+            (
+                'force_batch_size' not in self.config['fit']['data'] or
+                not self.config['fit']['data']['force_batch_size']
+            ) and
+            '3080 Ti Laptop' in torch.cuda.get_device_name(0)
+        ):
+            batch_size, accumulate_grad_batches = \
+                self.config['fit']['data']['init_args']['batch_size'], \
+                self.config['fit']['trainer']['accumulate_grad_batches']
+            
+            self.config['fit']['data']['init_args']['batch_size'] = batch_size // 2
+            self.config['fit']['trainer']['accumulate_grad_batches'] = accumulate_grad_batches * 2
+            
+            logger.warning(
+                f'Lowered batch size for low-memory GPU from {batch_size} to {batch_size // 2} '
+                f'and increased accumulate_grad_batches from {accumulate_grad_batches} to {accumulate_grad_batches * 2}'
+            )
+
 
 class TrainerWandb(Trainer):
     """Hotfix for wandb logger saving config & artifacts to project root dir
