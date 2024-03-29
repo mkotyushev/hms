@@ -21,7 +21,7 @@ from src.data.transforms import (
     Unsqueeze,
     RandomLrFlip,
 )
-from src.data.constants import LABEL_COLS_ORDERED
+from src.data.constants import LABEL_COLS_ORDERED, BAD_EEG_ID_SUB_ID
 from src.utils.utils import (
     CacheDictWithSave,
     hms_collate_fn,
@@ -304,6 +304,29 @@ class HmsDatamodule(LightningDataModule):
         df_meta_train_low = df_meta_train_low[
             ~df_meta_train_low['patient_id'].isin(df_meta_val['patient_id'])
         ]
+
+        # Remove bad samples from train
+        # BAD_EEG_ID_SUB_ID: list of tuples of bad eeg_id and subrecord_id
+        logger.info(
+            f'Length before bad samples removal: '
+            f'{len(df_meta_train_low)}, '
+            f'{len(df_meta_train_high)}'
+        )
+        df_meta_train_low = df_meta_train_low[
+            ~df_meta_train_low[['eeg_id', 'eeg_sub_id']].apply(
+                lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
+            )
+        ]
+        df_meta_train_high = df_meta_train_high[
+            ~df_meta_train_high[['eeg_id', 'eeg_sub_id']].apply(
+                lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
+            )
+        ]
+        logger.info(
+            f'Length after bad samples removal: '
+            f'{len(df_meta_train_low)}, '
+            f'{len(df_meta_train_high)}'
+        )
 
         # Apply label smoothing
         # Note: label smoothing is not applied to pseudolabels
