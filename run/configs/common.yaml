@@ -114,6 +114,7 @@ data:
     by_subrecord: false
     test_is_train: false
     img_size: null
+    drop_bad: null
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     # set force_batch_size to false if run in agent 
