@@ -379,7 +379,7 @@ class ToImage:
                 -gain_factor * 2 * EEG_DIFF_ABS_MAX[i], \
                 gain_factor * 2 * EEG_DIFF_ABS_MAX[i]
             y = np.clip(y, min_, max_)
-            y = (y + min_) / (max_ - min_)
+            y = (y - min_) / (max_ - min_)
             y[0] = 0
             y[-1] = 1
 
