@@ -347,7 +347,8 @@ def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
 class ToImage:
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
-        img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 1600, 4), dtype=np.uint16)
+        height = 32
+        img_array = np.zeros((height * len(EEG_DIFF_COL_INDICES), 1600, 4), dtype=np.uint16)
 
         eeg = item['eeg']
         subdf = eeg[3000:7000].T
@@ -374,27 +375,27 @@ class ToImage:
             y[-1] = 1
 
             if i == 0:
-                plot_to_array(y, img_array[16 * i:16 * i + 16 + 8, :])
+                plot_to_array(y, img_array[height * i:height * i + height + height // 2, :])
             elif i == len(EEG_DIFF_COL_INDICES) - 1:
-                plot_to_array(y, img_array[16 * i - 8:16 * i + 16, :])
+                plot_to_array(y, img_array[height * i - height // 2:height * i + height, :])
             else:
-                plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :])
+                plot_to_array(y, img_array[height * i - height // 2:height * i + height + height // 2, :])
 
         img_array = np.clip(img_array, 0, 255)
-        img = np.zeros((320, 640+1600), dtype=np.float32)
-        img[:, 640:] = img_array[..., 3] / 255.0
+        img = np.zeros((640, 320+1600), dtype=np.float32)
+        img[:, 320:] = img_array[..., 3] / 255.0
 
         # 10 minutes spectrogram
         y = item['spectrogram']
         y[np.isnan(y)] = 0
         y = cv2.resize(y, (320, 320))
-        img[:, 320:640] = y
+        img[:320, :320] = y
 
         # 50 seconds EEG spectrogram
         y = item['eeg_spectrogram']
         y = y.transpose(1, 2, 0).reshape(-1, y.shape[0] * y.shape[2])
         y = cv2.resize(y, (320, 320))
-        img[:, :320] = y
+        img[320:, :320] = y
     
         item['image'] = img
         return item
