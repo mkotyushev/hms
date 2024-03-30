@@ -393,16 +393,21 @@ class ToImage:
             y[0] = 0
             y[-1] = 1
 
-            end = -16
-            if i == 0:
-                plot_to_array(y, img_array[height * i:height * i + height + height // 2, :])
-            elif i == len(EEG_DIFF_COL_INDICES) - 1:
-                plot_to_array(y, img_array[height * i - height // 2:height * i + height, :])
+            if self.eeg_norm == 'precalc':
+                end = -1
             else:
-                plot_to_array(y, img_array[height * i - height // 2:height * i + height + height // 2, :])
+                end = -height
+
+            if i == 0:
+                plot_to_array(y, img_array[height * i:height * i + height + height // 2, :end])
+            elif i == len(EEG_DIFF_COL_INDICES) - 1:
+                plot_to_array(y, img_array[height * i - height // 2:height * i + height, :end])
+            else:
+                plot_to_array(y, img_array[height * i - height // 2:height * i + height + height // 2, :end])
             
             # Fill gain factor register
-            img_array[height * i:height * i + height, end:] = gain_factor / 9 * 255
+            if self.eeg_norm == 'gain':
+                img_array[height * i:height * i + height, end:] = gain_factor / 9 * 255
 
         img_array = np.clip(img_array, 0, 255)
         img = np.zeros((640, 320+1600), dtype=np.float32)
