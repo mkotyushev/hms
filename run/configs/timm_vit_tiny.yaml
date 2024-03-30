@@ -1,3 +1,5 @@
+trainer:
+  accumulate_grad_batches: 3
 model:
   class_path: src.model.modules.HmsModule
   init_args:
@@ -9,4 +11,4 @@ data:
   class_path: src.data.datamodule.HmsDatamodule
   init_args:
     cache_dir: /workspace/data_external/.cache_img
-    batch_size: 24
+    batch_size: 8
