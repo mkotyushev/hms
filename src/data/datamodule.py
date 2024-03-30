@@ -6,7 +6,7 @@ import pandas as pd
 import yaml
 import albumentations as A
 import torch
-from copy import copy
+from copy import copy, deepcopy
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 from lightning import LightningDataModule
@@ -386,6 +386,10 @@ class HmsDatamodule(LightningDataModule):
             self.train_dataset_mixup_ref = copy(self.train_dataset_high)
         elif self.hparams.low_n_voters_strategy == 'both':
             self.train_dataset_mixup_ref = copy(self.train_dataset_both)
+        self.train_dataset_mixup_ref.df_meta = deepcopy(self.train_dataset_mixup_ref.df_meta)
+        self.train_dataset_mixup_ref.df_meta = self.train_dataset_mixup_ref.df_meta[
+            self.train_dataset_mixup_ref.df_meta['expert_consensus'] != 'Other'
+        ]
         self.train_dataset_mixup_ref.transform = self.train_ref_transform
         self.train_mixup_transform.reference_data = self.train_dataset_mixup_ref
 
