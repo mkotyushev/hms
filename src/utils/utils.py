@@ -58,8 +58,8 @@ class MyLightningCLI(LightningCLI):
         if (
             'fit' in self.config and 
             (
-                'force_batch_size' not in self.config['fit']['data'] or
-                not self.config['fit']['data']['force_batch_size']
+                'force_batch_size' not in self.config['fit']['data']['init_args'] or
+                not self.config['fit']['data']['init_args']['force_batch_size']
             ) and
             '3080 Ti Laptop' in torch.cuda.get_device_name(0)
         ):
