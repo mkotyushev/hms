@@ -6,6 +6,7 @@ import pandas as pd
 import yaml
 import albumentations as A
 import torch
+from copy import copy
 from pathlib import Path
 from typing import Optional, Dict, Any, Literal
 from lightning import LightningDataModule
@@ -69,11 +70,14 @@ class HmsDatamodule(LightningDataModule):
         self.train_dataset_low = None
         self.train_dataset_high = None
         self.train_dataset_both = None
+        self.train_dataset_mixup_ref = None
         self.val_dataset = None
         self.test_dataset = None
 
         self.train_select_transform = None
         self.train_transform = None
+        self.train_ref_transform = None
+        self.train_mixup_transform = None
 
         self.val_select_transform = None
         self.val_transform = None
@@ -107,6 +111,7 @@ class HmsDatamodule(LightningDataModule):
                     p=0.4
                 ),
                 # A.GridDistortion(num_steps=5, distort_limit=0.3, p=0.5),
+                self.train_mixup_transform,
                 A.CoarseDropout(
                     max_holes=5, 
                     max_width=64, 
@@ -116,6 +121,24 @@ class HmsDatamodule(LightningDataModule):
                 ),
                 *resize_transform,
                 Unsqueeze(),
+            ]
+        )
+        self.train_ref_transform = A.Compose(
+            [
+                Normalize(
+                    eps=1e-6
+                ),
+                RandomLrFlip(p=0.5),
+                ToImage(),
+                A.RandomBrightnessContrast(p=0.5, brightness_limit=0.1, contrast_limit=0.1),
+                A.OneOf(
+                    [
+                        A.GaussNoise(var_limit=[0.1, 0.3]),
+                        A.GaussianBlur(),
+                        A.MotionBlur(),
+                    ], 
+                    p=0.4
+                ),
             ]
         )
         self.val_select_transform = self.test_select_transform = CenterSubrecord()
@@ -355,6 +378,16 @@ class HmsDatamodule(LightningDataModule):
                 cache=self.cache,
                 by_subrecord=self.hparams.by_subrecord,
             )
+
+        # Reference dataset for mixup
+        if self.hparams.low_n_voters_strategy == 'low':
+            self.train_dataset_mixup_ref = copy(self.train_dataset_low)
+        elif self.hparams.low_n_voters_strategy in ['high', 'simultaneous']:
+            self.train_dataset_mixup_ref = copy(self.train_dataset_high)
+        elif self.hparams.low_n_voters_strategy == 'both':
+            self.train_dataset_mixup_ref = copy(self.train_dataset_both)
+        self.train_dataset_mixup_ref.transform = self.train_ref_transform
+        self.train_mixup_transform.reference_data = self.train_dataset_mixup_ref
 
         if self.val_dataset is None:
             self.val_dataset = HmsDataset(
