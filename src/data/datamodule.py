@@ -393,10 +393,6 @@ class HmsDatamodule(LightningDataModule):
         elif self.hparams.low_n_voters_strategy == 'both':
             self.train_dataset_mixup_ref = copy(self.train_dataset_both)
         self.train_dataset_mixup_ref.df_meta = deepcopy(self.train_dataset_mixup_ref.df_meta)
-        self.train_dataset_mixup_ref.df_meta = self.train_dataset_mixup_ref.df_meta[
-            self.train_dataset_mixup_ref.df_meta['expert_consensus'] != 'Other'
-        ]
-        self.train_dataset_mixup_ref.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(self.train_dataset_mixup_ref.df_meta['eeg_id'].unique()))}
         self.train_dataset_mixup_ref.transform = self.train_ref_transform
         self.train_mixup_transform.reference_data = self.train_dataset_mixup_ref
 
