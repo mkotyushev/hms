@@ -6,5 +6,6 @@ hms/
 packages/
 models/
 src/notebooks/
+labels/
 .cache/
 *.csv
