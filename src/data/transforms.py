@@ -8,7 +8,7 @@ from albumentations.random_utils import beta
 from copy import deepcopy
 from justpyplot import justpyplot as jplt
 from scipy.signal import butter, lfilter
-from typing import Dict, List, Callable, Union, Sequence, Iterator, Any
+from typing import Dict, List, Callable, Union, Sequence, Iterator, Any, Literal
 from warnings import warn
 
 from .constants import (
@@ -348,6 +348,10 @@ def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
 
 
 class ToImage:
+    def __init__(self, eeg_norm: Literal['precalc', 'gain'] = 'precalc'):
+        self.eeg_norm = eeg_norm
+        self.gain_factors = [2 ** i for i in range(10)]
+
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
         height = 32
@@ -371,18 +375,34 @@ class ToImage:
             b, a = butter(5, (1, 70), btype='bandpass', analog=False, fs=EED_SAMPLING_RATE_HZ)
             y = lfilter(b, a, y, axis=0)
 
-            # Clip to 2 * max
-            y = np.clip(y, -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i])
-            y = (y + 2 * EEG_DIFF_ABS_MAX[i]) / (4 * EEG_DIFF_ABS_MAX[i])
+            # Normalize
+            if self.eeg_norm == 'precalc':
+                # Clip to 2 * max
+                gain_factor = 1.0
+            else:
+                # Clip to 2 * max, but scale before that
+                abs_max = np.quantile(np.abs(y), 0.95)
+                for gain_factor in self.gain_factors:
+                    if abs_max <= gain_factor * 2 * EEG_DIFF_ABS_MAX[i]:
+                        break
+            min_, max_ = \
+                -gain_factor * 2 * EEG_DIFF_ABS_MAX[i], \
+                gain_factor * 2 * EEG_DIFF_ABS_MAX[i]
+            y = np.clip(y, min_, max_)
+            y = (y - min_) / (max_ - min_)
             y[0] = 0
             y[-1] = 1
 
+            end = -16
             if i == 0:
                 plot_to_array(y, img_array[height * i:height * i + height + height // 2, :])
             elif i == len(EEG_DIFF_COL_INDICES) - 1:
                 plot_to_array(y, img_array[height * i - height // 2:height * i + height, :])
             else:
                 plot_to_array(y, img_array[height * i - height // 2:height * i + height + height // 2, :])
+            
+            # Fill gain factor register
+            img_array[height * i:height * i + height, end:] = gain_factor / 9 * 255
 
         img_array = np.clip(img_array, 0, 255)
         img = np.zeros((640, 320+1600), dtype=np.float32)

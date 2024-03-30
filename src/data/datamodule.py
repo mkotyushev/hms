@@ -55,6 +55,7 @@ class HmsDatamodule(LightningDataModule):
         img_size: Optional[int] = None,
         drop_bad: Optional[Literal['all', 'filtered']] = None,
         mixup_alpha: Optional[float] = None,
+        eeg_norm: Literal['precalc', 'gain'] = 'precalc',
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         force_batch_size: bool = True,
@@ -115,7 +116,7 @@ class HmsDatamodule(LightningDataModule):
                     eps=1e-6
                 ),
                 RandomLrFlip(p=0.5),
-                ToImage(),
+                ToImage(eeg_norm=self.hparams.eeg_norm),
                 A.RandomBrightnessContrast(p=0.5, brightness_limit=0.1, contrast_limit=0.1),
                 A.OneOf(
                     [
@@ -144,7 +145,7 @@ class HmsDatamodule(LightningDataModule):
                     eps=1e-6
                 ),
                 RandomLrFlip(p=0.5),
-                ToImage(),
+                ToImage(eeg_norm=self.hparams.eeg_norm),
                 A.RandomBrightnessContrast(p=0.5, brightness_limit=0.1, contrast_limit=0.1),
                 A.OneOf(
                     [
@@ -162,7 +163,7 @@ class HmsDatamodule(LightningDataModule):
                 Normalize(
                     eps=1e-6
                 ),
-                ToImage(),
+                ToImage(eeg_norm=self.hparams.eeg_norm),
                 *resize_transform,
                 Unsqueeze(),
             ]

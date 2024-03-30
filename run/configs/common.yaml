@@ -116,6 +116,7 @@ data:
     img_size: null
     drop_bad: null
     mixup_alpha: null
+    eeg_norm: precalc
     cache_dir: /workspace/data_external/.cache
     batch_size: 32
     # set force_batch_size to false if run in agent 
