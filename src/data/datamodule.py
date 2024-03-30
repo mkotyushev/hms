@@ -21,6 +21,7 @@ from src.data.transforms import (
     Normalize,
     Unsqueeze,
     RandomLrFlip,
+    MixUpHms,
 )
 from src.data.constants import LABEL_COLS_ORDERED
 from src.utils.utils import (
@@ -94,7 +95,11 @@ class HmsDatamodule(LightningDataModule):
         if self.hparams.img_size is not None:
             resize_transform = [A.Resize(self.hparams.img_size, self.hparams.img_size)]
         self.train_select_transform = RandomSubrecord(mode=self.hparams.random_subrecord_mode)
-        self.train_mixup_transform = A.MixUp(reference_data=None, p=0.5)
+        self.train_mixup_transform = MixUpHms(
+            reference_data=None, 
+            read_fn=lambda x: {'image': x['image'], 'global_label': x['label']},
+            p=0.5,
+        )
         self.train_transform = A.Compose(
             [
                 Normalize(
@@ -391,6 +396,7 @@ class HmsDatamodule(LightningDataModule):
         self.train_dataset_mixup_ref.df_meta = self.train_dataset_mixup_ref.df_meta[
             self.train_dataset_mixup_ref.df_meta['expert_consensus'] != 'Other'
         ]
+        self.train_dataset_mixup_ref.index_to_eeg_id = {i: id_ for i, id_ in enumerate(sorted(self.train_dataset_mixup_ref.df_meta['eeg_id'].unique()))}
         self.train_dataset_mixup_ref.transform = self.train_ref_transform
         self.train_mixup_transform.reference_data = self.train_dataset_mixup_ref
 

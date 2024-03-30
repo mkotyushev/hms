@@ -1,12 +1,15 @@
+import albumentations as A
 import cv2
 import math
 import numpy as np
 import random
 import scipy.stats as ss
+from albumentations.random_utils import beta
 from copy import deepcopy
 from justpyplot import justpyplot as jplt
 from scipy.signal import butter, lfilter
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Union, Sequence, Iterator, Any
+from warnings import warn
 
 from .constants import (
     SPECTROGRAM_N_SAMPLES, 
@@ -432,3 +435,17 @@ class RandomLrFlip:
         item['eeg_spectrogram'] = item['eeg_spectrogram'][:, :, EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES]
 
         return item
+
+
+class MixUpHms(A.MixUp):
+    def get_params(self) -> Dict[str, Union[None, float, Dict[str, Any]]]:
+        mix_idx = random.randint(0, len(self.reference_data) - 1)
+        mix_data = self.reference_data[mix_idx]
+
+        # If mix_data is None or empty after the above checks, return default values
+        if mix_data is None:
+            return {"mix_data": {}, "mix_coef": 1}
+
+        # If mix_data is not None, calculate mix_coef and apply read_fn
+        mix_coef = beta(self.alpha, self.alpha)  # Assuming beta is defined elsewhere
+        return {"mix_data": self.read_fn(mix_data), "mix_coef": mix_coef}
