@@ -368,8 +368,12 @@ class ToImage:
             y = lfilter(b, a, y, axis=0)
 
             # Clip to 2 * max
-            y = np.clip(y, -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i])
-            y = (y + 2 * EEG_DIFF_ABS_MAX[i]) / (4 * EEG_DIFF_ABS_MAX[i])
+            if np.abs(y).max() <= EEG_DIFF_ABS_MAX[i]:
+                min_, max_ = -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i]
+            else:
+                min_, max_ = 2 * np.quantile(y, 0.01), 2 * np.quantile(y, 0.99)
+            y = np.clip(y, min_, max_)
+            y = (y + min_) / (max_ - min_)
             y[0] = 0
             y[-1] = 1
 
