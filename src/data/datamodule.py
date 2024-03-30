@@ -94,6 +94,7 @@ class HmsDatamodule(LightningDataModule):
         if self.hparams.img_size is not None:
             resize_transform = [A.Resize(self.hparams.img_size, self.hparams.img_size)]
         self.train_select_transform = RandomSubrecord(mode=self.hparams.random_subrecord_mode)
+        self.train_mixup_transform = A.MixUp(reference_data=None, p=0.5)
         self.train_transform = A.Compose(
             [
                 Normalize(
