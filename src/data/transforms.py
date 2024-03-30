@@ -345,6 +345,9 @@ def butter_lowpass_filter(data, cutoff=20, fs=EED_SAMPLING_RATE_HZ, order=5):
 
 
 class ToImage:
+    def __init__(self):
+        self.gain_factors = [2 ** i for i in range(10)]
+
     def __call__(self, *args, force_apply: bool = False, **item):
         # TODO: add adaptive image size
         img_array = np.zeros((16 * len(EEG_DIFF_COL_INDICES), 1600, 4), dtype=np.uint16)
@@ -368,11 +371,13 @@ class ToImage:
             y = lfilter(b, a, y, axis=0)
 
             # Clip to 2 * max
-            do_global_norm = np.abs(y).max() <= 2 * EEG_DIFF_ABS_MAX[i]
-            if do_global_norm:
-                min_, max_ = -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i]
-            else:
-                min_, max_ = 2 * np.quantile(y, 0.01), 2 * np.quantile(y, 0.99)
+            abs_max = np.abs(y).max()
+            for gain_factor in self.gain_factors:
+                if abs_max <= gain_factor * 2 * EEG_DIFF_ABS_MAX[i]:
+                    break
+            min_, max_ = \
+                -gain_factor * 2 * EEG_DIFF_ABS_MAX[i], \
+                gain_factor * 2 * EEG_DIFF_ABS_MAX[i]
             y = np.clip(y, min_, max_)
             y = (y + min_) / (max_ - min_)
             y[0] = 0
@@ -386,8 +391,8 @@ class ToImage:
             else:
                 plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :end])
             
-            if not do_global_norm:
-                img_array[16 * i:16 * i + 16, end:] = 255
+            # Fill gain factor register
+            img_array[16 * i:16 * i + 16, end:] = gain_factor / 9 * 255
 
         img_array = np.clip(img_array, 0, 255)
         img = np.zeros((320, 640+1600), dtype=np.float32)
