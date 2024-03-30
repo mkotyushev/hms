@@ -368,7 +368,8 @@ class ToImage:
             y = lfilter(b, a, y, axis=0)
 
             # Clip to 2 * max
-            if np.abs(y).max() <= 2 * EEG_DIFF_ABS_MAX[i]:
+            do_global_norm = np.abs(y).max() <= 2 * EEG_DIFF_ABS_MAX[i]
+            if do_global_norm:
                 min_, max_ = -2 * EEG_DIFF_ABS_MAX[i], 2 * EEG_DIFF_ABS_MAX[i]
             else:
                 min_, max_ = 2 * np.quantile(y, 0.01), 2 * np.quantile(y, 0.99)
@@ -377,12 +378,16 @@ class ToImage:
             y[0] = 0
             y[-1] = 1
 
+            end = -16
             if i == 0:
-                plot_to_array(y, img_array[16 * i:16 * i + 16 + 8, :])
+                plot_to_array(y, img_array[16 * i:16 * i + 16 + 8, :end])
             elif i == len(EEG_DIFF_COL_INDICES) - 1:
-                plot_to_array(y, img_array[16 * i - 8:16 * i + 16, :])
+                plot_to_array(y, img_array[16 * i - 8:16 * i + 16, :end])
             else:
-                plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :])
+                plot_to_array(y, img_array[16 * i - 8:16 * i + 16 + 8, :end])
+            
+            if not do_global_norm:
+                img_array[16 * i:16 * i + 16, end:] = 255
 
         img_array = np.clip(img_array, 0, 255)
         img = np.zeros((320, 640+1600), dtype=np.float32)
