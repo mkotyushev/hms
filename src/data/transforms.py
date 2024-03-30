@@ -371,7 +371,7 @@ class ToImage:
             y = lfilter(b, a, y, axis=0)
 
             # Clip to 2 * max
-            abs_max = np.abs(y).max()
+            abs_max = np.quantile(np.abs(y), 0.99)
             for gain_factor in self.gain_factors:
                 if abs_max <= gain_factor * 2 * EEG_DIFF_ABS_MAX[i]:
                     break
