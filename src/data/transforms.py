@@ -449,3 +449,10 @@ class MixUpHms(A.MixUp):
         # If mix_data is not None, calculate mix_coef and apply read_fn
         mix_coef = beta(self.alpha, self.alpha)  # Assuming beta is defined elsewhere
         return {"mix_data": self.read_fn(mix_data), "mix_coef": mix_coef}
+
+    def __call__(self, *args: Any, force_apply: bool = False, **kwargs: Any) -> Any:
+        kwargs['global_label'] = kwargs['label']
+        result = super().__call__(*args, force_apply=force_apply, **kwargs)
+        result['label'] = result['global_label']
+        del result['global_label']
+        return result
