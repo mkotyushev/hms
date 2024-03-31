@@ -51,6 +51,7 @@ class HmsDatamodule(LightningDataModule):
         label_smoothing_n_voters: int | None = None,
         low_n_voters_strategy: Literal['low', 'high', 'both', 'simultaneous'] = 'high',
         by_subrecord: bool = False,
+        by_subrecord_val: bool = False,
         test_is_train: bool = False,
         img_size: Optional[int] = None,
         drop_bad: Optional[Literal['all', 'filtered']] = None,
@@ -453,7 +454,7 @@ class HmsDatamodule(LightningDataModule):
                 transform=self.val_transform,
                 do_aux_transform=False,  # only for low
                 cache=self.cache,
-                by_subrecord=False,  # val is always with center subrecord
+                by_subrecord=self.hparams.by_subrecord_val,  # val is always with center subrecord
             )
             
         if self.test_dataset is None:

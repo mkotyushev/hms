@@ -115,6 +115,7 @@ data:
     label_smoothing_n_voters: null
     low_n_voters_strategy: high
     by_subrecord: false
+    by_subrecord_val: false
     test_is_train: false
     img_size: null
     drop_bad: null
