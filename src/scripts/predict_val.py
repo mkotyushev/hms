@@ -58,7 +58,7 @@ def predict_val(model_dirpath, output_dirpath):
             img = (img * 255).astype(np.uint8)
             img = img[0]
             img = Image.fromarray(img)
-            img = img.resize((H, W))
+            img = img.resize((W, H))
             img.save(filepath)
 
         embeddings.append(embs.detach().cpu().numpy())
