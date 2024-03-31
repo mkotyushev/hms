@@ -6,4 +6,5 @@ trainer:
 data:
   init_args:
     test_is_train: true
+    split_index: 0
 ckpt_path: /workspace/hms/models/best_0.ckpt
