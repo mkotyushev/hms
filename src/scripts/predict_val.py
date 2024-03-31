@@ -2,12 +2,14 @@ import torch
 import numpy as np
 import pandas as pd
 import sys
+from PIL import Image
 from pathlib import Path
 from tqdm import tqdm
 
 from src.utils.utils import MyLightningCLI, TrainerWandb, TempSetContextManager
 
 
+H, W = 640, 320 + 1600
 def predict_val(model_dirpath, output_dirpath):
     # Setup
     args = sys.argv[1:]
@@ -29,6 +31,10 @@ def predict_val(model_dirpath, output_dirpath):
     cli.model = cli.model.cuda()
     cli.model.eval()
 
+    # Create output directory
+    output_dirpath.mkdir(parents=True, exist_ok=True)
+    (output_dirpath / f'images_{cli.datamodule.hparams.split_index}').mkdir(parents=True, exist_ok=True)
+
     # Predict
     embeddings, dfs_meta, logits = [], [], []
     for batch in tqdm(cli.datamodule.val_dataloader()):
@@ -40,6 +46,20 @@ def predict_val(model_dirpath, output_dirpath):
                     feats
                 )
             )
+        
+        # Save images
+        for i in range(len(batch['meta']['eeg_id'])):
+            eeg_id = batch['meta']['eeg_id'].iloc[i]
+            eeg_sub_id = batch['meta']['eeg_sub_id'].iloc[i]
+            img = batch['image'][i].cpu().numpy()
+
+            # Save as png
+            filepath = output_dirpath / f'images_{cli.datamodule.hparams.split_index}' / f'{eeg_id}_{eeg_sub_id}.png'
+            img = (img * 255).astype(np.uint8)
+            img = img[0]
+            img = Image.fromarray(img)
+            img = img.resize((H, W))
+            img.save(filepath)
 
         embeddings.append(embs.detach().cpu().numpy())
         logits.append(logs.detach().cpu().numpy())
