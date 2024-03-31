@@ -1,5 +1,6 @@
 import joblib
 import logging
+import os
 import numpy as np
 import pandas as pd
 import random
@@ -10,8 +11,9 @@ from collections import defaultdict
 from typing import Dict, Optional, Union
 from lightning import Trainer
 from lightning.pytorch.cli import LightningCLI
-from lightning.pytorch.callbacks import ModelCheckpoint, BasePredictionWriter
+from lightning.pytorch.callbacks import ModelCheckpoint, BasePredictionWriter, Callback
 from lightning.pytorch.loggers import WandbLogger, TensorBoardLogger
+from torch_ema import ExponentialMovingAverage
 from pathlib import Path
 from PIL import Image
 from tqdm.auto import tqdm
@@ -507,3 +509,59 @@ def hms_zip_collate_fn(zip_batch):
     output: list of dicts of torch.Tensor
     """
     return [hms_collate_fn(batch) for batch in zip(*zip_batch)]
+
+
+class EMACallback(Callback):
+    """Wrapper around https://github.com/fadel/pytorch_ema
+    library: keep track of exponential moving average of model 
+    weights across epochs with given decay and saves it 
+    on the end of training to each attached ModelCheckpoint 
+    callback output dir as `ema-{decay}.pth` file.
+    """
+    def __init__(self, decay=0.9, save_on='train_epoch_end'):
+        super().__init__()
+        self.ema = None
+        self.decay = decay
+
+        assert save_on in ['train_epoch_end', 'validation_end', 'fit_end']
+        self.save_on = save_on
+
+    def on_fit_start(self, trainer, pl_module):
+        self.ema = ExponentialMovingAverage(pl_module.parameters(), decay=self.decay)
+    
+    def on_train_epoch_end(self, trainer, pl_module):
+        if self.ema is None:
+            return
+
+        self.ema.update()
+
+        if self.save_on == 'train_epoch_end':
+            self._save(trainer)
+    
+    def on_validation_end(self, trainer, pl_module):
+        if self.ema is None:
+            return
+
+        if self.save_on == 'validation_end':
+            self._save(trainer)
+
+    def on_fit_end(self, trainer, pl_module):
+        if self.ema is None:
+            return
+    
+        if self.save_on == 'fit_end':
+            self._save(trainer)
+    
+    def _save(self, trainer):
+        assert self.ema is not None
+
+        with self.ema.average_parameters():
+            for cb in trainer.checkpoint_callbacks:
+                if (
+                    isinstance(cb, ModelCheckpoint) and 
+                    not isinstance(cb, ModelCheckpointNoSave)
+                ):
+                    trainer.save_checkpoint(
+                        os.path.join(cb.dirpath, f'ema-{self.decay}.ckpt'),
+                        weights_only=False,  # to easily operate via PL API
+                    )
