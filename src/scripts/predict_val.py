@@ -9,7 +9,6 @@ from tqdm import tqdm
 from src.utils.utils import MyLightningCLI, TrainerWandb, TempSetContextManager
 
 
-H, W = 640, 320 + 1600
 def predict_val(model_dirpath, output_dirpath):
     # Setup
     args = sys.argv[1:]
@@ -58,7 +57,6 @@ def predict_val(model_dirpath, output_dirpath):
             img = (img * 255).astype(np.uint8)
             img = img[0]
             img = Image.fromarray(img)
-            img = img.resize((W, H))
             img.save(filepath)
 
         embeddings.append(embs.detach().cpu().numpy())
