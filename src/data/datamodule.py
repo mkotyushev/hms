@@ -459,6 +459,11 @@ class HmsDatamodule(LightningDataModule):
             
         if self.test_dataset is None:
             if self.hparams.test_is_train:
+                # Drop all intersections with high train
+                df_meta_test = df_meta_test[
+                    ~df_meta_test['patient_id'].isin(df_meta_train_high['patient_id'])
+                ]
+
                 eeg_dirpath = self.hparams.dataset_dirpath / 'train_eegs'
                 spectrogram_dirpath = self.hparams.dataset_dirpath / 'train_spectrograms'
             else:
