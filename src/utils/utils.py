@@ -426,7 +426,6 @@ class HmsPredictionWriter(BasePredictionWriter):
         self, 
         output_filepath: Path, 
         image_output_dirpath: Path | None = None,
-        drop_eeg_sub_id: bool = True,
         img_size: int = 320,
     ):
         super().__init__(write_interval='batch_and_epoch')
@@ -434,7 +433,6 @@ class HmsPredictionWriter(BasePredictionWriter):
         self.image_output_dirpath = image_output_dirpath
         if self.image_output_dirpath is not None:
             self.image_output_dirpath.mkdir(parents=True, exist_ok=True)
-        self.drop_eeg_sub_id = drop_eeg_sub_id
         self.img_size = img_size
         self.preds = defaultdict(list)
 
@@ -444,10 +442,14 @@ class HmsPredictionWriter(BasePredictionWriter):
         # Increase precision
         prediction = F.softmax(prediction.to(torch.float32), dim=1)
         self.preds['eeg_id'].append(batch['meta']['eeg_id'])
-        self.preds['eeg_sub_id'].append(batch['meta']['eeg_sub_id'])
+        if 'eeg_sub_id' in batch['meta'].columns:
+            self.preds['eeg_sub_id'].append(batch['meta']['eeg_sub_id'])
         self.preds['prediction'].append(prediction.detach().cpu().numpy())
 
         if self.image_output_dirpath is not None:
+            assert 'eeg_sub_id' in batch['meta'].columns, \
+                'eeg_sub_id must be in batch meta to save images.'
+
             images = batch['image'].detach().cpu().numpy()
             for i in range(len(batch['meta']['eeg_id'])):
                 eeg_id = batch['meta']['eeg_id'].iloc[i]
@@ -464,21 +466,21 @@ class HmsPredictionWriter(BasePredictionWriter):
 
     def write_on_epoch_end(self, trainer, pl_module, predictions, batch_indices):
         # Make dataframe
-        df = pd.DataFrame(
-            {
-                'eeg_id': np.concatenate(self.preds['eeg_id']),
-                'eeg_sub_id': np.concatenate(self.preds['eeg_sub_id']),
-            }
-        )
+        if 'eeg_sub_id' in self.preds:
+            df = pd.DataFrame(
+                {
+                    'eeg_id': np.concatenate(self.preds['eeg_id']),
+                    'eeg_sub_id': np.concatenate(self.preds['eeg_sub_id']),
+                }
+            )
+        else:
+            df = pd.DataFrame({'eeg_id': np.concatenate(self.preds['eeg_id'])})
         df[LABEL_COLS_ORDERED] = np.concatenate(self.preds['prediction'], axis=0)
 
         # Convert type
         df['eeg_id'] = df['eeg_id'].astype(int)
-        df['eeg_sub_id'] = df['eeg_sub_id'].astype(int)
-
-        # Drop eeg_sub_id
-        if self.drop_eeg_sub_id:
-            df = df.drop(columns=['eeg_sub_id'])
+        if 'eeg_sub_id' in df.columns:
+            df['eeg_sub_id'] = df['eeg_sub_id'].astype(int)
 
         # Save
         df.to_csv(self.output_filepath, index=False)

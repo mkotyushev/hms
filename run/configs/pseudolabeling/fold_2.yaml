@@ -3,7 +3,6 @@ trainer:
     - class_path: src.utils.utils.HmsPredictionWriter
       init_args:
         output_filepath: /workspace/hms/labels/pseudolabel/submission_2.csv
-        drop_eeg_sub_id: false
 data:
   init_args:
     test_is_train: true
