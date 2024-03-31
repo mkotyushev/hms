@@ -54,7 +54,8 @@ class HmsDatamodule(LightningDataModule):
         by_subrecord_val: bool = False,
         test_is_train: bool = False,
         img_size: Optional[int] = None,
-        drop_bad: Optional[Literal['all', 'filtered']] = None,
+        drop_bad_which: Optional[Literal['all', 'filtered']] = None,
+        drop_bad_from: Optional[Literal['train', 'val', 'both']] = None,
         mixup_alpha: Optional[float] = None,
         eeg_norm: Literal['precalc', 'gain'] = 'precalc',
         cache_dir: Optional[Path] = None,
@@ -350,30 +351,44 @@ class HmsDatamodule(LightningDataModule):
         logger.info(
             f'Length before bad samples removal: '
             f'{len(df_meta_train_low)}, '
-            f'{len(df_meta_train_high)}'
+            f'{len(df_meta_train_high)}, '
+            f'{len(df_meta_val)}'
         )
-        if self.hparams.drop_bad == 'all':
-            df_meta_train_low = df_meta_train_low[
-                ~df_meta_train_low['eeg_id'].isin(BAD_EEG_ID)
-            ]
-            df_meta_train_high = df_meta_train_high[
-                ~df_meta_train_high['eeg_id'].isin(BAD_EEG_ID)
-            ]
-        elif self.hparams.drop_bad == 'filtered':
-            df_meta_train_low = df_meta_train_low[
-                ~df_meta_train_low[['eeg_id', 'eeg_sub_id']].apply(
-                    lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
-                )
-            ]
-            df_meta_train_high = df_meta_train_high[
-                ~df_meta_train_high[['eeg_id', 'eeg_sub_id']].apply(
-                    lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
-                )
-            ]
+        if self.hparams.drop_bad_which == 'all':
+            if self.hparams.drop_bad_from in ['train', 'both']:
+                df_meta_train_low = df_meta_train_low[
+                    ~df_meta_train_low['eeg_id'].isin(BAD_EEG_ID)
+                ]
+                df_meta_train_high = df_meta_train_high[
+                    ~df_meta_train_high['eeg_id'].isin(BAD_EEG_ID)
+                ]
+            if self.hparams.drop_bad_from in ['val', 'both']:
+                df_meta_val = df_meta_val[
+                    ~df_meta_val['eeg_id'].isin(BAD_EEG_ID)
+                ]                
+        elif self.hparams.drop_bad_which == 'filtered':
+            if self.hparams.drop_bad_from in ['train', 'both']:
+                df_meta_train_low = df_meta_train_low[
+                    ~df_meta_train_low[['eeg_id', 'eeg_sub_id']].apply(
+                        lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
+                    )
+                ]
+                df_meta_train_high = df_meta_train_high[
+                    ~df_meta_train_high[['eeg_id', 'eeg_sub_id']].apply(
+                        lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
+                    )
+                ]
+            if self.hparams.drop_bad_from in ['val', 'both']:
+                df_meta_val = df_meta_val[
+                    ~df_meta_val[['eeg_id', 'eeg_sub_id']].apply(
+                        lambda x: tuple(x) in BAD_EEG_ID_SUB_ID, axis=1
+                    )
+                ]
         logger.info(
             f'Length after bad samples removal: '
             f'{len(df_meta_train_low)}, '
-            f'{len(df_meta_train_high)}'
+            f'{len(df_meta_train_high)}, '
+            f'{len(df_meta_val)}'
         )
 
         # Apply label smoothing
