@@ -8,7 +8,7 @@ import albumentations as A
 import torch
 from copy import copy, deepcopy
 from pathlib import Path
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedGroupKFold
@@ -44,7 +44,7 @@ class HmsDatamodule(LightningDataModule):
         dataset_dirpath: Path,	
         split_index: int,
         eeg_spectrograms_filepath: Path | None = None,
-        pl_filepath: Path | None = None,
+        pl_filepathes: Optional[List[Path]] = None,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'gauss_discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
@@ -393,17 +393,34 @@ class HmsDatamodule(LightningDataModule):
 
         # Use pseudolabels for train objects with low number 
         # of voters
-        if self.hparams.pl_filepath is not None:
-            df_pl = pd.read_csv(self.hparams.pl_filepath)
-            df_meta_train_low = df_meta_train_low \
-                .drop(LABEL_COLS_ORDERED, axis=1)
+        if self.hparams.pl_filepathes is not None:
             logger.info(f'Length before PLs merge: {len(df_meta_train_low)}')
-            df_meta_train_low = pd.merge(
-                df_meta_train_low,
-                df_pl,
-                on=('eeg_id', 'eeg_sub_id'),
-                how='left',
-            )
+
+            # Load all PLs
+            for i, pl_filepath in enumerate(self.hparams.pl_filepathes):
+                df_pl = pd.read_csv(pl_filepath)
+                df_meta_train_low = pd.merge(
+                    df_meta_train_low,
+                    df_pl,
+                    on=('eeg_id', 'eeg_sub_id'),
+                    suffixes=('', f'_{i}'),
+                    how='left',
+                )
+
+            for col in LABEL_COLS_ORDERED:
+                # Average
+                pl_cols = [f'{col}_{i}' for i in range(len(self.hparams.pl_filepathes))]
+                df_meta_train_low[col] = np.nanmean(
+                    df_meta_train_low[pl_cols].values, 
+                    axis=1
+                )
+
+                # Drop PL columns
+                df_meta_train_low = df_meta_train_low.drop(columns=pl_cols)
+
+            # Drop nans
+            df_meta_train_low = df_meta_train_low.dropna(subset=LABEL_COLS_ORDERED)            
+            
             logger.info(f'Length after PLs merge: {len(df_meta_train_low)}')
 
         # Apply label smoothing
