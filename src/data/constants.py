@@ -1010,3 +1010,12 @@ BAD_EEG_ID = [
     2110702195, 2133337193, 2134947401, 2154211773, 2191916085, 2196368570, 
     2197339537, 2261591873, 2272873515, 2273786560, 2315697534, 2328525878
 ]
+
+EXPERT_CONSENSUS_TO_LABEL_COL = {
+    'Seizure': 'seizure_vote',
+    'LPD': 'lpd_vote',
+    'GPD': 'gpd_vote',
+    'LRDA': 'lrda_vote',
+    'GRDA': 'grda_vote',
+    'Other': 'other_vote',
+}

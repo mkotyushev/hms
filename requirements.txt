@@ -20,3 +20,4 @@ albumentations==1.4.1
 kaggle==1.6.6
 timm==0.9.16
 torch-ema==0.3
+umap-learn==0.5.5
