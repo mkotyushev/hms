@@ -391,6 +391,21 @@ class HmsDatamodule(LightningDataModule):
             f'{len(df_meta_val)}'
         )
 
+        # Use pseudolabels for train objects with low number 
+        # of voters
+        if self.hparams.pl_filepath is not None:
+            df_pl = pd.read_csv(self.hparams.pl_filepath)
+            df_meta_train_low = df_meta_train_low \
+                .drop(LABEL_COLS_ORDERED, axis=1)
+            logger.info(f'Length before PLs merge: {len(df_meta_train_low)}')
+            df_meta_train_low = pd.merge(
+                df_meta_train_low,
+                df_pl,
+                on=('eeg_id', 'eeg_sub_id'),
+                how='left',
+            )
+            logger.info(f'Length after PLs merge: {len(df_meta_train_low)}')
+
         # Apply label smoothing
         # Note: label smoothing is not applied to pseudolabels
         df_meta_train_high = self.apply_label_smoothing_n_voters(df_meta_train_high)
