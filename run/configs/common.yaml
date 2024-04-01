@@ -22,7 +22,7 @@ trainer:
         save_last: true
     - class_path: src.utils.utils.EMACallback
       init_args:
-        decay: 0.9
+        decay: 0.8
         save_on: train_epoch_end
   # limit_train_batches: 10
   # limit_val_batches: 10
