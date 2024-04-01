@@ -712,7 +712,8 @@ def create_spectrogram_with_cusignal(eeg_data, eeg_id, start, duration= 50,
 
             min_ = np.quantile(spectrogram_slice, 0.01, axis=(0, 1), keepdims=True)
             max_ = np.quantile(spectrogram_slice, 0.99, axis=(0, 1), keepdims=True)
-            spectrogram_slice = (spectrogram_slice - min_) / (max_ - min_)
+            div = (max_ - min_)
+            spectrogram_slice = np.divide(spectrogram_slice - min_, div, out=np.zeros_like(spectrogram_slice), where=div!=0)
             spectrogram_slice = np.clip(spectrogram_slice, 0, 1)
             
             spectrogram[:, :, i] += spectrogram_slice
