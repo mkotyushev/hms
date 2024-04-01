@@ -157,6 +157,9 @@ class Subrecord:
             eeg_stop_index = eeg_start_index + EED_N_SAMPLES // MEL_N_FFT
             eeg = eeg[eeg_start_index:eeg_stop_index]
 
+        eeg_raw = item['eeg_raw']
+        eeg_raw = eeg_raw.iloc[eeg_start_index:eeg_stop_index]
+
         spectrogram = item['spectrogram']
         spectrogram_time = item['spectrogram_time']
         spectrogram_label_offset_seconds = subrecord['spectrogram_label_offset_seconds']
@@ -173,6 +176,7 @@ class Subrecord:
 
         # Put back to item
         item['eeg'] = eeg
+        item['eeg_raw'] = eeg_raw
         item['eeg_spectrogram'] = eeg_spectrogram
         item['spectrogram'] = spectrogram
         item['spectrogram_time'] = spectrogram_time
@@ -451,6 +455,7 @@ class RandomLrFlip:
 
         # Swap left and right EEGs: odd and even numbered channels
         item['eeg'] = item['eeg'][:, EEG_LR_FLIP_REORDER_INDICES]
+        item['eeg_raw'] = item['eeg_raw'].iloc[:, EEG_LR_FLIP_REORDER_INDICES]
 
         # Flip spectrogram: swap first and last halves
         spectrogram_len = item['spectrogram'].shape[1]
