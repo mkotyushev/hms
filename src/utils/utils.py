@@ -710,10 +710,10 @@ def create_spectrogram_with_cusignal(eeg_data, eeg_id, start, duration= 50,
             spectrogram_slice = np.clip(Sxx_filtered, np.exp(-4), np.exp(6))
             spectrogram_slice = np.log10(spectrogram_slice)
 
-            normalization_epsilon = 1e-6
-            mean = spectrogram_slice.mean(axis=(0, 1), keepdims=True)
-            std = spectrogram_slice.std(axis=(0, 1), keepdims=True)
-            spectrogram_slice = (spectrogram_slice - mean) / (std + normalization_epsilon)
+            min_ = np.quantile(spectrogram_slice, 0.01, axis=(0, 1), keepdims=True)
+            max_ = np.quantile(spectrogram_slice, 0.99, axis=(0, 1), keepdims=True)
+            spectrogram_slice = (spectrogram_slice - min_) / (max_ - min_)
+            spectrogram_slice = np.clip(spectrogram_slice, 0, 1)
             
             spectrogram[:, :, i] += spectrogram_slice
             processed_eeg[f'{cols[j]}_{cols[j+1]}'] = signal
