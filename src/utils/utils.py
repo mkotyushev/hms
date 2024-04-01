@@ -9,6 +9,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib
 import matplotlib.pyplot as plt
+import cv2
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter
+from scipy.signal import butter, filtfilt, iirnotch, spectrogram as scipy_spectrogram
 from mpl_toolkits.axes_grid1 import AxesGrid
 from collections import defaultdict
 from typing import Dict, Optional, Union
@@ -623,3 +629,157 @@ def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap', r
         plt.register_cmap(cmap=newcmap)
 
     return newcmap
+
+
+# https://www.kaggle.com/code/rafaelzimmermann1/hms-spectrogram-creation-using-gpu
+def create_spectrogram_with_cusignal(eeg_data, eeg_id, start, duration= 50,
+                                    low_cut_freq = 0.7, high_cut_freq = 20, order_band = 5,
+                                    spec_size_freq = 267, spec_size_time = 30,
+                                    nperseg_ = 1500, noverlap_ = 1483, nfft_ = 2750,
+                                    sigma_gaussian = 0.7, 
+                                    mean_montage_names = 4):
+    
+    electrode_names = ['LL', 'RL', 'LP', 'RP']
+
+    electrode_pairs = [
+        ['Fp1', 'F7', 'T3', 'T5', 'O1'],
+        ['Fp2', 'F8', 'T4', 'T6', 'O2'],
+        ['Fp1', 'F3', 'C3', 'P3', 'O1'],
+        ['Fp2', 'F4', 'C4', 'P4', 'O2']
+    ]
+    
+    # Filter specifications
+    nyquist_freq = 0.5 * 200
+    low_cut_freq_normalized = low_cut_freq / nyquist_freq
+    high_cut_freq_normalized = high_cut_freq / nyquist_freq
+
+    # Bandpass and notch filter
+    bandpass_coefficients = butter(order_band, [low_cut_freq_normalized, high_cut_freq_normalized], btype='band')
+    notch_coefficients = iirnotch(w0=60, Q=30, fs=200)
+    
+    spec_size = duration * 200
+    start = start * 200
+    real_start = start + (10_000//2) - (spec_size//2)
+    eeg_data = eeg_data.iloc[real_start:real_start+spec_size]
+    
+    
+    # Spectrogram parameters
+    fs = 200
+    nperseg = nperseg_ 
+    noverlap = noverlap_ 
+    nfft = nfft_
+    
+    if spec_size_freq <=0 or spec_size_time <=0:
+        frequencias_size = int((nfft // 2)/5.15198)+1
+        segmentos = int((spec_size - noverlap) / (nperseg - noverlap)) 
+    else:
+        frequencias_size = spec_size_freq
+        segmentos = spec_size_time
+        
+    # Initialize spectrogram container
+#     print(frequencias_size, segmentos)
+    spectrogram = np.zeros((frequencias_size, segmentos, 4), dtype='float32')
+    
+    processed_eeg = {}
+
+    for i, name in enumerate(electrode_names):
+        cols = electrode_pairs[i]
+        processed_eeg[name] = np.zeros(spec_size)
+        for j in range(4):
+            # Compute differential signals
+            signal = np.array(eeg_data[cols[j]].values - eeg_data[cols[j+1]].values)
+
+            # Handle NaNs
+            mean_signal = np.nanmean(signal)
+            signal = np.nan_to_num(signal, nan=mean_signal) if np.isnan(signal).mean() < 1 else np.zeros_like(signal)
+            
+            # Filter bandpass and notch
+            signal_filtered = filtfilt(*notch_coefficients, signal)
+            signal_filtered = filtfilt(*bandpass_coefficients, signal_filtered)
+            signal = np.asarray(signal_filtered)
+            
+            # GPU-accelerated spectrogram computation
+            frequencies, times, Sxx = scipy_spectrogram(signal, fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
+
+            # Filter frequency range
+            valid_freqs = (frequencies >= 0.59) & (frequencies <= 20)
+            frequencies_filtered = frequencies[valid_freqs]
+            Sxx_filtered = Sxx[valid_freqs, :]
+
+            # Logarithmic transformation and normalization using Cupy
+            spectrogram_slice = np.clip(Sxx_filtered, np.exp(-4), np.exp(6))
+            spectrogram_slice = np.log10(spectrogram_slice)
+
+            normalization_epsilon = 1e-6
+            mean = spectrogram_slice.mean(axis=(0, 1), keepdims=True)
+            std = spectrogram_slice.std(axis=(0, 1), keepdims=True)
+            spectrogram_slice = (spectrogram_slice - mean) / (std + normalization_epsilon)
+            
+            spectrogram[:, :, i] += spectrogram_slice
+            processed_eeg[f'{cols[j]}_{cols[j+1]}'] = signal
+            processed_eeg[name] += signal
+        
+        # AVERAGE THE 4 MONTAGE DIFFERENCES
+        if mean_montage_names > 0:
+            spectrogram[:,:,i] /= mean_montage_names
+
+    # Convert to NumPy and apply Gaussian filter
+    if sigma_gaussian > 0.0:
+        spectrogram = gaussian_filter(spectrogram, sigma=sigma_gaussian)
+
+    # Filter EKG signal
+    ekg_signal_filtered = filtfilt(*notch_coefficients, eeg_data["EKG"].values)
+    ekg_signal_filtered = filtfilt(*bandpass_coefficients, ekg_signal_filtered)
+    processed_eeg['EKG'] = np.array(ekg_signal_filtered)
+
+    return spectrogram, processed_eeg
+
+
+def create_final_image(image_50s, image_10s):
+    """Combine three images into a single final image."""
+    # Initialize an empty image array for the first image composition
+    single_channel_image1 = np.zeros((1068, 501))
+    for i in range(4):
+        start = i * 267
+        end = start + 267
+        single_channel_image1[start:end, :] = image_50s[:, :, i]
+
+    # Initialize an empty image array for the second image composition
+    single_channel_image2 = np.zeros((400, 291))
+    for i in range(4):
+        start = i * 100
+        end = start + 100
+        single_channel_image2[start:end, :] = image_10s[:, :, i]
+
+    # Resize images to fit the final composition
+    resized_image1 = cv2.resize(single_channel_image1, (320, 320), interpolation=cv2.INTER_AREA)
+    resized_image2 = cv2.resize(single_channel_image2, (320, 320), interpolation=cv2.INTER_AREA)
+
+    # Create the final image and place the resized images accordingly
+    final_image = np.zeros((640, 320), dtype=np.float32)
+    final_image[:320, :] = resized_image1
+    final_image[320:, :] = resized_image2
+    final_image = final_image[::-1]  # Flip the final image vertically
+    return final_image
+
+
+def create_spec(df_eeg):
+    spec50s, _ = create_spectrogram_with_cusignal(
+        eeg_data=df_eeg, eeg_id=None, start=0, duration= 50,
+        low_cut_freq = 0.7, high_cut_freq = 20, order_band = 5,
+        spec_size_freq = 267, spec_size_time = 501,
+        nperseg_ = 1500, noverlap_ = 1483, nfft_ = 2750,
+        sigma_gaussian = 0.0, 
+        mean_montage_names = 4
+    )
+    spec10s, _ = create_spectrogram_with_cusignal(
+        eeg_data=df_eeg, eeg_id=1000913311, start=0, duration= 10,
+        low_cut_freq = 0.7, high_cut_freq = 20, order_band = 5,
+        spec_size_freq = 100, spec_size_time = 291,
+        nperseg_ = 260, noverlap_ = 254, nfft_ = 1030,
+        sigma_gaussian = 0.0, 
+        mean_montage_names = 4
+    )
+    image = create_final_image(spec50s, spec10s)
+    
+    return image

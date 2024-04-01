@@ -77,6 +77,7 @@ class HmsDataset:
         item = {
             'eeg': eeg,
             'eeg_spectrogram': eeg_spectrogram,
+            'eeg_raw': df_eeg_or_eeg,
             'spectrogram': df_spectrogram[SPECTROGRAM_COLS_ORDERED].values,
             'spectrogram_time': df_spectrogram['time'].values,
             'label': label,

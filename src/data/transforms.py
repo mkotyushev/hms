@@ -24,6 +24,7 @@ from .constants import (
     EEG_SPECTROGRAM_LR_FLIP_REORDER_INDICES,
     EEG_DIFF_ABS_MAX,
 )
+from src.utils.utils import create_spec
 
 
 ###################################################################
@@ -410,8 +411,8 @@ class ToImage:
                 img_array[height * i:height * i + height, end:] = gain_factor / 9 * 255
 
         img_array = np.clip(img_array, 0, 255)
-        img = np.zeros((640, 320+1600), dtype=np.float32)
-        img[:, 320:] = img_array[..., 3] / 255.0
+        img = np.zeros((640, 320+320+1600), dtype=np.float32)
+        img[:, 640:] = img_array[..., 3] / 255.0
 
         # 10 minutes spectrogram
         y = item['spectrogram']
@@ -424,6 +425,10 @@ class ToImage:
         y = y.transpose(1, 2, 0).reshape(-1, y.shape[0] * y.shape[2])
         y = cv2.resize(y, (320, 320))
         img[320:, :320] = y
+
+        # Another type of specs
+        img[:, 320:640] = create_spec(item['eeg_raw'])
+        del item['eeg_raw']
     
         item['image'] = img
         return item
