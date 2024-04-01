@@ -755,6 +755,10 @@ def create_final_image(image_50s, image_10s):
     resized_image1 = cv2.resize(single_channel_image1, (320, 320), interpolation=cv2.INTER_AREA)
     resized_image2 = cv2.resize(single_channel_image2, (320, 320), interpolation=cv2.INTER_AREA)
 
+    # Transpose the images to fit the final composition
+    resized_image1 = resized_image1.T
+    resized_image2 = resized_image2.T
+
     # Create the final image and place the resized images accordingly
     final_image = np.zeros((640, 320), dtype=np.float32)
     final_image[:320, :] = resized_image1
