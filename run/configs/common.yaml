@@ -79,6 +79,7 @@ model:
     consistency_loss_lambda: null
     weight_by_n_voters: false
     weight_by_inv_n_subrecords: false
+    pos_weight: null
     optimizer_init: 
       class_path: torch.optim.AdamW
       init_args:

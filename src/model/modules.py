@@ -1,10 +1,10 @@
 import logging
 import torch
+import torch.nn.functional as F
 import timm
 from lightning import LightningModule
 from typing import Any, Dict, Optional, Union, Literal
 from torch import Tensor
-import torch.nn.functional as F
 from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
@@ -398,6 +398,7 @@ class HmsModule(BaseModule):
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
+        pos_weight: Optional[torch.FloatTensor] = None,
         lr=None,
         **base_kwargs,
     ):
@@ -420,6 +421,9 @@ class HmsModule(BaseModule):
             in_chans = model_kwargs.pop('in_chans', 3)
             self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
             patch_first_conv(self.model, in_chans)
+
+        # Pos weight
+        self.pos_weight = torch.ones(N_CLASSES) if pos_weight is None else pos_weight
         
         self.unfreeze_only_selected()
         
@@ -441,27 +445,34 @@ class HmsModule(BaseModule):
         if 'label' not in batch:
             return None, dict(), preds
         
-        # KL-divergence loss
-        log_preds = F.log_softmax(preds, dim=1)
         target = batch['label']
-        kld = F.kl_div(
-            log_preds, 
-            target,
-            log_target=False,
-            reduction='none',
-        ).sum(1)
 
-        weight = torch.ones_like(kld)
-        if weight_by_n_voters:
-            weight *= torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
-        if weight_by_inv_n_subrecords:
-            weight /= batch['n_subrecords']
-        kld = (kld * weight).sum() / weight.sum()
+        # Cross-entropy loss
+        bce = F.binary_cross_entropy_with_logits(
+            preds, 
+            target, 
+            reduction='mean',
+            pos_weight=self.pos_weight.to(preds.device),
+        )
+
+        # KL-divergence loss as metric
+        with torch.no_grad():
+            probas = F.sigmoid(preds)
+            probas = torch.clamp(probas, 1e-8, 1 - 1e-8)
+            probas = probas / probas.sum(1, keepdim=True)
+            log_probas = torch.log(probas)
+            kld = F.kl_div(
+                log_probas, 
+                target,
+                log_target=False,
+                reduction='batchmean',
+            )
 
         losses = {
-            'kld': kld
+            'kld': kld,
+            'bce': bce,
         }
-        return sum(losses.values()), losses, preds
+        return bce, losses, preds
     
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
