@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 import timm
 from lightning import LightningModule
-from typing import Any, Dict, Optional, Union, Literal
+from typing import Any, Dict, Optional, Union, List
 from torch import Tensor
 from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
@@ -398,7 +398,7 @@ class HmsModule(BaseModule):
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
-        pos_weight: Optional[torch.FloatTensor] = None,
+        pos_weight: Optional[List[float]] = None,
         lr=None,
         **base_kwargs,
     ):
@@ -419,18 +419,18 @@ class HmsModule(BaseModule):
             )
         else:
             in_chans = model_kwargs.pop('in_chans', 3)
-            self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
+            self.model = timm.create_model(model, num_classes=2 * N_CLASSES, **model_kwargs)
             patch_first_conv(self.model, in_chans)
 
         # Pos weight
-        self.pos_weight = torch.ones(N_CLASSES) if pos_weight is None else pos_weight
+        self.pos_weight = \
+            torch.ones(N_CLASSES) \
+            if pos_weight is None else \
+            torch.tensor(pos_weight)
         
         self.unfreeze_only_selected()
         
     def _compute_loss_preds(self, batch, image_key='image', *args, **kwargs):
-        weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
-        weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
-
         if self.hparams.model == 'hms_classifier':
             if self.hparams.use == 'all':
                 x_s, x_e = batch['spectrogram'], batch['eeg']
@@ -441,38 +441,35 @@ class HmsModule(BaseModule):
             preds = self.model(x_s, x_e)
         else:
             preds = self.model(batch[image_key])
+            preds_multiclass, preds_multilabel = preds[:, :N_CLASSES], preds[:, N_CLASSES:]
 
         if 'label' not in batch:
             return None, dict(), preds
         
         target = batch['label']
 
-        # Cross-entropy loss
-        bce = F.binary_cross_entropy_with_logits(
-            preds, 
-            target, 
-            reduction='mean',
-            pos_weight=self.pos_weight.to(preds.device),
+        # KL-divergence loss
+        log_probas_multiclass = F.log_softmax(preds_multiclass, dim=1)
+        kld = F.kl_div(
+            log_probas_multiclass, 
+            target,
+            log_target=False,
+            reduction='batchmean',
         )
 
-        # KL-divergence loss as metric
-        with torch.no_grad():
-            probas = F.sigmoid(preds)
-            probas = torch.clamp(probas, 1e-8, 1 - 1e-8)
-            probas = probas / probas.sum(1, keepdim=True)
-            log_probas = torch.log(probas)
-            kld = F.kl_div(
-                log_probas, 
-                target,
-                log_target=False,
-                reduction='batchmean',
-            )
+        # Cross-entropy loss
+        bce = F.binary_cross_entropy_with_logits(
+            preds_multilabel, 
+            target, 
+            reduction='mean',
+            pos_weight=self.pos_weight.to(preds_multilabel.device),
+        )
 
         losses = {
             'kld': kld,
             'bce': bce,
         }
-        return bce, losses, preds
+        return kld + bce, losses, preds
     
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
