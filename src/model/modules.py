@@ -451,8 +451,7 @@ class HmsModule(BaseModule):
             probas = F.softmax(preds, dim=1)
             probas1 = F.softmax(preds1, dim=1)
             probas = (probas + probas1) / 2
-            probas = torch.clamp(probas, 1e-7, 1 - 1e-7)
-            log_preds = torch.log(probas)
+            log_preds = torch.log(torch.clamp(probas, 1e-7, 1 - 1e-7))
         else:
             log_preds = F.log_softmax(preds, dim=1)
             probas = F.softmax(preds, dim=1)
