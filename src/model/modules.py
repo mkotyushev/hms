@@ -444,7 +444,7 @@ class HmsModule(BaseModule):
                 preds = self.model(batch[image_key])
 
         if 'label' not in batch:
-            return None, dict(), preds
+            return None, dict(), F.softmax(preds, dim=1)
         
         # KL-divergence loss
         if self.hparams.tta:
