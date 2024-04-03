@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 import timm
 from lightning import LightningModule
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Optional, Union, List, Literal
 from torch import Tensor
 from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
@@ -399,6 +399,7 @@ class HmsModule(BaseModule):
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
         pos_weight: Optional[List[float]] = None,
+        bce_mode: Literal['multilabel', 'multilabel_1v1', 'multilabel_1v1vo'] = 'multilabel',
         lr=None,
         **base_kwargs,
     ):
@@ -419,12 +420,20 @@ class HmsModule(BaseModule):
             )
         else:
             in_chans = model_kwargs.pop('in_chans', 3)
-            self.model = timm.create_model(model, num_classes=2 * N_CLASSES, **model_kwargs)
+            if bce_mode == 'multilabel':
+                num_classes = 2 * N_CLASSES  # second head for multilabel
+            elif bce_mode == 'multilabel_1v1':
+                num_classes = N_CLASSES + N_CLASSES * (N_CLASSES - 1) // 2 # second head for multilabel 1v1
+            self.model = timm.create_model(model, num_classes=num_classes, **model_kwargs)
             patch_first_conv(self.model, in_chans)
 
         # Pos weight
+        if bce_mode == 'multilabel':
+            default_pos_weight = torch.ones(N_CLASSES)
+        elif bce_mode == 'multilabel_1v1':
+            default_pos_weight = torch.ones(N_CLASSES * (N_CLASSES - 1) // 2)
         self.pos_weight = \
-            torch.ones(N_CLASSES) \
+            default_pos_weight \
             if pos_weight is None else \
             torch.tensor(pos_weight)
         
@@ -458,18 +467,52 @@ class HmsModule(BaseModule):
         )
 
         # Cross-entropy loss
-        bce = F.binary_cross_entropy_with_logits(
-            preds_multilabel, 
-            target, 
-            reduction='mean',
-            pos_weight=self.pos_weight.to(preds_multilabel.device),
-        )
+        bce = None
+        if self.hparams.bce_mode == 'multilabel':
+            # Treat target as multilabel
+            bce = F.binary_cross_entropy_with_logits(
+                preds_multilabel, 
+                target, 
+                reduction='mean',
+                pos_weight=self.pos_weight.to(preds_multilabel.device),
+            )
+        elif self.hparams.bce_mode == 'multilabel_1v1':
+            # Compose 1 vs 1 multilabel target
+            # s.shape: (B, C, C)
+            s = (target[:, :, None] + target[:, None, :])
+            zero_mask = s == 0
+            target_1v1 = target[..., None] / (s + 1e-6)
+            target_1v1[zero_mask] = 0.5
 
-        losses = {
-            'kld': kld,
-            'bce': bce,
-        }
-        return kld + bce, losses, preds
+            # Get upper triangle of the matrix
+            target_1v1 = target_1v1[:, torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1]
+
+            # Get weight as number of voters voted for each pair
+            weight = s * torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)[:, None, None]
+            weight = weight[:, torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1]
+
+            # Compute BCE
+            bce = F.binary_cross_entropy_with_logits(
+                preds_multilabel, 
+                target_1v1, 
+                weight=weight,
+                reduction='mean',
+                pos_weight=self.pos_weight.to(preds_multilabel.device),
+            )
+
+        if bce is None:
+            losses = {
+                'kld': kld,
+            }
+            total_loss = kld
+        else:
+            losses = {
+                'kld': kld,
+                'bce': bce,
+            }
+            total_loss = kld + bce
+        
+        return total_loss, losses, preds
     
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
