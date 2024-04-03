@@ -45,6 +45,7 @@ class MyLightningCLI(LightningCLI):
         Example:
             parser.link_arguments("data.init_args.img_size", "model.init_args.img_size")
         """
+        parser.link_arguments("model.init_args.tta", "data.init_args.tta")
         return
 
     def before_instantiate_classes(self) -> None:
