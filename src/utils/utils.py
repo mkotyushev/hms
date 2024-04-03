@@ -440,7 +440,6 @@ class HmsPredictionWriter(BasePredictionWriter):
         self, trainer, pl_module, prediction, batch_indices, batch, batch_idx, dataloader_idx
     ):
         # Increase precision
-        prediction = F.softmax(prediction.to(torch.float32), dim=1)
         self.preds['eeg_id'].append(batch['meta']['eeg_id'])
         if 'eeg_sub_id' in batch['meta'].columns:
             self.preds['eeg_sub_id'].append(batch['meta']['eeg_sub_id'])

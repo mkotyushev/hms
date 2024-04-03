@@ -455,6 +455,7 @@ class HmsModule(BaseModule):
             log_preds = torch.log(probas)
         else:
             log_preds = F.log_softmax(preds, dim=1)
+            probas = F.softmax(preds, dim=1)
         target = batch['label']
         kld = F.kl_div(
             log_preds, 
@@ -473,7 +474,7 @@ class HmsModule(BaseModule):
         losses = {
             'kld': kld
         }
-        return sum(losses.values()), losses, preds
+        return sum(losses.values()), losses, probas
     
     def compute_loss_preds(self, batch, *args, **kwargs):
         if isinstance(batch, dict):
