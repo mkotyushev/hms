@@ -22,6 +22,7 @@ from src.data.transforms import (
     Unsqueeze,
     RandomLrFlip,
     MixUpHms,
+    Product,
 )
 from src.data.constants import LABEL_COLS_ORDERED, BAD_EEG_ID_SUB_ID, BAD_EEG_ID
 from src.utils.utils import (
@@ -58,6 +59,7 @@ class HmsDatamodule(LightningDataModule):
         drop_bad_from: Optional[Literal['train', 'val', 'both']] = None,
         mixup_alpha: Optional[float] = None,
         eeg_norm: Literal['precalc', 'gain'] = 'precalc',
+        tta: bool = False,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         force_batch_size: bool = True,
@@ -160,7 +162,8 @@ class HmsDatamodule(LightningDataModule):
             ]
         )
         self.val_select_transform = self.test_select_transform = CenterSubrecord()
-        self.val_transform = self.test_transform = A.Compose(
+
+        base_val_test_transforms = A.Compose(
             [
                 Normalize(
                     eps=1e-6
@@ -170,6 +173,25 @@ class HmsDatamodule(LightningDataModule):
                 Unsqueeze(),
             ]
         )
+        if self.hparams.tta:
+            self.val_transform = self.test_transform = Product(
+                transforms=[
+                    base_val_test_transforms, 
+                    A.Compose(
+                        [
+                            Normalize(
+                                eps=1e-6
+                            ),
+                            RandomLrFlip(always_apply=True),
+                            ToImage(eeg_norm=self.hparams.eeg_norm),
+                            *resize_transform,
+                            Unsqueeze(),
+                        ]
+                    )
+                ]
+            )
+        else:
+            self.val_transform = self.test_transform = base_val_test_transforms
 
     def make_cache(self, df_meta) -> None:
         if self.hparams.cache_dir is None:

@@ -398,6 +398,7 @@ class HmsModule(BaseModule):
         consistency_loss_lambda: Optional[float] = None,
         weight_by_n_voters: bool = False,
         weight_by_inv_n_subrecords: bool = False,
+        tta: bool = False,
         lr=None,
         **base_kwargs,
     ):
@@ -436,13 +437,24 @@ class HmsModule(BaseModule):
                 x_s, x_e = None, batch['eeg']
             preds = self.model(x_s, x_e)
         else:
-            preds = self.model(batch[image_key])
+            if self.hparams.tta:
+                preds = self.model(batch['image'])
+                preds1 = self.model(batch['image_1'])
+            else:
+                preds = self.model(batch[image_key])
 
         if 'label' not in batch:
             return None, dict(), preds
         
         # KL-divergence loss
-        log_preds = F.log_softmax(preds, dim=1)
+        if self.hparams.tta:
+            probas = F.softmax(preds, dim=1)
+            probas1 = F.softmax(preds1, dim=1)
+            probas = (probas + probas1) / 2
+            probas = torch.clamp(probas, 1e-7, 1 - 1e-7)
+            log_preds = torch.log(probas)
+        else:
+            log_preds = F.log_softmax(preds, dim=1)
         target = batch['label']
         kld = F.kl_div(
             log_preds, 

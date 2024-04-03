@@ -482,3 +482,17 @@ class MixUpHms(A.MixUp):
         result['label'] = result['global_label']
         del result['global_label']
         return result
+
+
+class Product:
+    def __init__(self, transforms: List[Callable]):
+        self.transforms = transforms
+
+    def __call__(self, *args, force_apply: bool = False, **item):
+        item_result = self.transforms[0](**deepcopy(item))
+        for i, transform in enumerate(self.transforms):
+            if i == 0:
+                continue
+            item_transformed = transform(**deepcopy(item))
+            item_result[f'image_{i}'] = item_transformed['image']
+        return item_result
