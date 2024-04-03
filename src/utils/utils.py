@@ -476,6 +476,8 @@ class HmsPredictionWriter(BasePredictionWriter):
         else:
             df = pd.DataFrame({'eeg_id': np.concatenate(self.preds['eeg_id'])})
         df[LABEL_COLS_ORDERED] = np.concatenate(self.preds['prediction'], axis=0)
+        df[LABEL_COLS_ORDERED] = df[LABEL_COLS_ORDERED].astype(np.float64)
+        df[LABEL_COLS_ORDERED] = df[LABEL_COLS_ORDERED] / df[LABEL_COLS_ORDERED].values.sum(axis=1)[:, None]
 
         # Convert type
         df['eeg_id'] = df['eeg_id'].astype(int)
