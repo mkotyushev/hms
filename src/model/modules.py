@@ -485,13 +485,22 @@ class HmsModule(BaseModule):
             target_1v1[zero_mask] = 0.5
 
             # Get upper triangle of the matrix
-            target_1v1 = target_1v1[:, torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1]
+            # excluding 1v1 target denominator zeros
+            triu_mask = torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1
+            mask = triu_mask & ~zero_mask
+            target_1v1 = target_1v1[:, mask]
 
             # Get weight as number of voters voted for each pair
+            # excluding 1v1 target denominator zeros
             weight = s * torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)[:, None, None]
-            weight = weight[:, torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1]
+            weight = weight[:, mask]
 
-            # Compute BCE
+            # Exclude 1v1 target denominator zeros from preds
+            # preds_multilabel.shape: (B, C * (C - 1) // 2)
+            mask_preds = mask[triu_mask]
+            preds_multilabel = preds_multilabel[:, mask_preds]
+
+            # Compute BCEd
             bce = F.binary_cross_entropy_with_logits(
                 preds_multilabel, 
                 target_1v1, 
