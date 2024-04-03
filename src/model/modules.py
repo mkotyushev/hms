@@ -507,14 +507,23 @@ class HmsModule(BaseModule):
             pos_weight = pos_weight[None, ...].repeat(B, 1)
             pos_weight = pos_weight[mask_preds]
 
+            # Keep only entries with pos_weight > 1
+            mask_pos_weight = pos_weight > 1
+            target_1v1 = target_1v1[mask_pos_weight]
+            weight = weight[mask_pos_weight]
+            preds_multilabel = preds_multilabel[mask_pos_weight]
+            pos_weight = pos_weight[mask_pos_weight]
+
             # Compute BCEd
-            bce = F.binary_cross_entropy_with_logits(
-                preds_multilabel, 
-                target_1v1, 
-                weight=weight,
-                reduction='mean',
-                pos_weight=pos_weight,
-            )
+            bce = 0
+            if preds_multilabel.shape[0] > 0:
+                bce = F.binary_cross_entropy_with_logits(
+                    preds_multilabel, 
+                    target_1v1, 
+                    weight=weight,
+                    reduction='mean',
+                    pos_weight=pos_weight,
+                )
 
         if bce is None:
             losses = {
