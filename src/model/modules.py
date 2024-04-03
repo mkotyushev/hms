@@ -443,9 +443,6 @@ class HmsModule(BaseModule):
             else:
                 preds = self.model(batch[image_key])
 
-        if 'label' not in batch:
-            return None, dict(), F.softmax(preds, dim=1)
-        
         # KL-divergence loss
         if self.hparams.tta:
             probas = F.softmax(preds, dim=1)
@@ -455,6 +452,10 @@ class HmsModule(BaseModule):
         else:
             log_preds = F.log_softmax(preds, dim=1)
             probas = F.softmax(preds, dim=1)
+
+        if 'label' not in batch:
+            return None, dict(), probas
+    
         target = batch['label']
         kld = F.kl_div(
             log_preds, 
