@@ -479,6 +479,7 @@ class HmsModule(BaseModule):
         elif self.hparams.bce_mode == 'multilabel_1v1':
             # Compose 1 vs 1 multilabel target
             # s.shape: (B, C, C)
+            B = target.shape[0]
             s = (target[:, :, None] + target[:, None, :])
             zero_mask = s == 0
             target_1v1 = target[..., None] / (s + 1e-6)
@@ -486,19 +487,25 @@ class HmsModule(BaseModule):
 
             # Get upper triangle of the matrix
             # excluding 1v1 target denominator zeros
-            triu_mask = torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1
-            mask = triu_mask & ~zero_mask
-            target_1v1 = target_1v1[:, mask]
+            triu_mask = (torch.triu(torch.ones(N_CLASSES, N_CLASSES), diagonal=1) == 1).to(target_1v1.device)
+            mask = triu_mask[None, ...] & ~zero_mask
+            target_1v1 = target_1v1[mask]
 
             # Get weight as number of voters voted for each pair
             # excluding 1v1 target denominator zeros
             weight = s * torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)[:, None, None]
-            weight = weight[:, mask]
+            weight = weight[mask]
 
             # Exclude 1v1 target denominator zeros from preds
             # preds_multilabel.shape: (B, C * (C - 1) // 2)
-            mask_preds = mask[triu_mask]
-            preds_multilabel = preds_multilabel[:, mask_preds]
+            mask_preds = mask[:, triu_mask]
+            preds_multilabel = preds_multilabel[mask_preds]
+
+            # Exclude 1v1 target denominator zeros from pos_weight
+            # pos_weight.shape: (C * (C - 1) // 2)
+            pos_weight = self.pos_weight.to(preds_multilabel.device)
+            pos_weight = pos_weight[None, ...].repeat(B, 1)
+            pos_weight = pos_weight[mask_preds]
 
             # Compute BCEd
             bce = F.binary_cross_entropy_with_logits(
@@ -506,7 +513,7 @@ class HmsModule(BaseModule):
                 target_1v1, 
                 weight=weight,
                 reduction='mean',
-                pos_weight=self.pos_weight.to(preds_multilabel.device),
+                pos_weight=pos_weight,
             )
 
         if bce is None:
