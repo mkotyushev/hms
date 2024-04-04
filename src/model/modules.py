@@ -9,7 +9,6 @@ from lightning.pytorch.cli import instantiate_class
 from torchmetrics import Metric
 from lightning.pytorch.utilities import grad_norm
 
-from .hms_classifier import HmsClassifier
 from src.data.constants import N_CLASSES
 from src.utils.utils import state_norm, patch_first_conv
 from src.utils.mechanic import mechanize
@@ -393,11 +392,8 @@ class BaseModule(LightningModule):
 class HmsModule(BaseModule):
     def __init__(
         self,
-        model: str = 'hms_classifier',
+        model: str,
         model_kwargs=None,
-        consistency_loss_lambda: Optional[float] = None,
-        weight_by_n_voters: bool = False,
-        weight_by_inv_n_subrecords: bool = False,
         tta: bool = False,
         lr=None,
         **base_kwargs,
@@ -408,40 +404,18 @@ class HmsModule(BaseModule):
         if model_kwargs is None:
             model_kwargs = dict()
 
-        if model == 'hms_classifier':
-            self.model = HmsClassifier(
-                n_classes=N_CLASSES,
-                input_dim_s=100,
-                num_patches_s=1200,
-                input_dim_e=200,
-                num_patches_e=1000,
-                **model_kwargs,
-            )
-        else:
-            in_chans = model_kwargs.pop('in_chans', 3)
-            self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
-            patch_first_conv(self.model, in_chans)
+        in_chans = model_kwargs.pop('in_chans', 3)
+        self.model = timm.create_model(model, num_classes=N_CLASSES, **model_kwargs)
+        patch_first_conv(self.model, in_chans)
         
         self.unfreeze_only_selected()
         
-    def _compute_loss_preds(self, batch, image_key='image', *args, **kwargs):
-        weight_by_n_voters = kwargs.get('weight_by_n_voters', False)
-        weight_by_inv_n_subrecords = kwargs.get('weight_by_inv_n_subrecords', False)
-
-        if self.hparams.model == 'hms_classifier':
-            if self.hparams.use == 'all':
-                x_s, x_e = batch['spectrogram'], batch['eeg']
-            elif self.hparams.use == 'spectrogram':
-                x_s, x_e = batch['spectrogram'], None
-            elif self.hparams.use == 'eeg':
-                x_s, x_e = None, batch['eeg']
-            preds = self.model(x_s, x_e)
+    def compute_loss_preds(self, batch, *args, **kwargs):
+        if self.hparams.tta:
+            preds = self.model(batch['image'])
+            preds1 = self.model(batch['image_1'])
         else:
-            if self.hparams.tta:
-                preds = self.model(batch['image'])
-                preds1 = self.model(batch['image_1'])
-            else:
-                preds = self.model(batch[image_key])
+            preds = self.model(batch['image'])
 
         # KL-divergence loss
         if self.hparams.tta:
@@ -461,69 +435,13 @@ class HmsModule(BaseModule):
             log_preds, 
             target,
             log_target=False,
-            reduction='none',
-        ).sum(1)
-
-        weight = torch.ones_like(kld)
-        if weight_by_n_voters:
-            weight *= torch.from_numpy(batch['meta']['n_voters'].values).to(kld.device)
-        if weight_by_inv_n_subrecords:
-            weight /= batch['n_subrecords']
-        kld = (kld * weight).sum() / weight.sum()
+            reduction='batchmean',
+        )
 
         losses = {
             'kld': kld
         }
         return sum(losses.values()), losses, probas
-    
-    def compute_loss_preds(self, batch, *args, **kwargs):
-        if isinstance(batch, dict):
-            # Simply compute loss and preds
-            total_loss, losses, preds = self._compute_loss_preds(batch, **kwargs)
-        else:
-            # Multiple dataloaders case: pseudo-labeling
-            assert self.hparams.consistency_loss_lambda is not None, \
-                'Multiple dataloaders are supported only with consistency mode enabled.'
-            
-            batch_low, batch_high = batch
-
-            # For low: compute consistency loss between 
-            # predictions on 'image' and 'image_aux'
-            # freezing the model for one of them
-            batch_low.pop('label')
-
-            # First
-            _, _, preds_image = self._compute_loss_preds(batch_low, **kwargs)
-
-            # Second
-            with torch.no_grad():
-                for param in self.model.parameters():
-                    param.requires_grad = False
-                _, _, preds_image_aux = self._compute_loss_preds(batch_low, image_key='image_aux', **kwargs)
-                preds_image = preds_image.detach()
-                for param in self.model.parameters():
-                    param.requires_grad = True
-
-            consistency_loss = F.kl_div(
-                F.log_softmax(preds_image, dim=1),
-                F.softmax(preds_image_aux, dim=1),
-                log_target=False,
-                reduction='batchmean',
-            )
-
-            # For high: compute as usual
-            cls_loss, losses, preds = self._compute_loss_preds(batch_high, **kwargs)
-            losses['consistency'] = consistency_loss
-            total_loss = cls_loss + self.hparams.consistency_loss_lambda * consistency_loss
-
-        return total_loss, losses, preds
-
-    def training_step(self, batch, batch_idx, **kwargs):
-        train_kwargs = {
-            'weight_by_n_voters': self.hparams.weight_by_n_voters,
-            'weight_by_inv_n_subrecords': self.hparams.weight_by_inv_n_subrecords,
-        }
-        return super().training_step(batch, batch_idx, **{**kwargs, **train_kwargs})
 
     def update_metrics(self, span, preds, batch):
         """Update train metrics."""

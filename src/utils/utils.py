@@ -55,11 +55,6 @@ class MyLightningCLI(LightningCLI):
             self.config['fit']['model']['init_args']['optimizer_init']['init_args']['lr'] = \
                 self.config['fit']['model']['init_args']['lr']
 
-        # If consistency mode used, check if it is correct
-        if 'fit' in self.config:
-            if self.config['fit']['model']['init_args']['consistency_loss_lambda'] is not None:
-                assert self.config['fit']['data']['init_args']['low_n_voters_strategy'] == 'simultaneous'
-
         # Lower batch size for low-memory GPUs
         if (
             'fit' in self.config and 
