@@ -55,6 +55,11 @@ class MyLightningCLI(LightningCLI):
             self.config['fit']['model']['init_args']['optimizer_init']['init_args']['lr'] = \
                 self.config['fit']['model']['init_args']['lr']
 
+        # Limit
+        if 'fit' in self.config and self.config['fit']['data']['init_args']['only_train']:
+            self.config['fit']['trainer']['limit_val_batches'] = 0
+            self.config['fit']['trainer']['num_sanity_val_steps'] = 0
+
         # Lower batch size for low-memory GPUs
         if (
             'fit' in self.config and 

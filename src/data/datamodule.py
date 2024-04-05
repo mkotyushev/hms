@@ -60,6 +60,7 @@ class HmsDatamodule(LightningDataModule):
         mixup_alpha: Optional[float] = None,
         eeg_norm: Literal['precalc', 'gain'] = 'precalc',
         tta: bool = False,
+        only_train: bool = False,
         cache_dir: Optional[Path] = None,
         batch_size: int = 32,
         force_batch_size: bool = True,
@@ -352,15 +353,19 @@ class HmsDatamodule(LightningDataModule):
         df_meta_high = df_meta[~low_mask]
 
         # Split to train, val and test
-        kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
-        train_indices, val_indices = list(
-            kfold.split(
-                X=df_meta_high, 
-                y=df_meta_high['expert_consensus'], 
-                groups=df_meta_high['patient_id']
-            )
-        )[self.hparams.split_index]
-        df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
+        if self.hparams.only_train:
+            df_meta_train_high = df_meta_high
+            df_meta_val = df_meta_high.drop(df_meta_high.index)
+        else:
+            kfold = StratifiedGroupKFold(n_splits=self.hparams.n_splits, shuffle=False, random_state=None)
+            train_indices, val_indices = list(
+                kfold.split(
+                    X=df_meta_high, 
+                    y=df_meta_high['expert_consensus'], 
+                    groups=df_meta_high['patient_id']
+                )
+            )[self.hparams.split_index]
+            df_meta_train_high, df_meta_val = df_meta_high.iloc[train_indices].copy(), df_meta_high.iloc[val_indices].copy()
 
         # Remove patient_id intersection with val
         # from low n_voters part
@@ -512,7 +517,7 @@ class HmsDatamodule(LightningDataModule):
         if self.hparams.mixup_alpha is not None:
             self.train_mixup_transform.reference_data = self.train_dataset_mixup_ref
 
-        if self.val_dataset is None:
+        if self.val_dataset is None and not self.hparams.only_train:
             self.val_dataset = HmsDataset(
                 df_meta_val,
                 eeg_dirpath=self.hparams.dataset_dirpath / 'train_eegs',
