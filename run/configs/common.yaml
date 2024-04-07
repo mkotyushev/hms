@@ -18,7 +18,7 @@ trainer:
         monitor: val_loss_kld
         every_n_epochs: 1
         mode: min
-        save_on_train_epoch_end: false
+        save_on_train_epoch_end: true
         save_last: true
     - class_path: src.utils.utils.EMACallback
       init_args:
