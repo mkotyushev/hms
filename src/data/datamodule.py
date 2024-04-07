@@ -75,6 +75,10 @@ class HmsDatamodule(LightningDataModule):
         if eeg_spectrograms_filepath is None:
             eeg_spectrograms_filepath = dataset_dirpath / 'eeg_specs.npy'
 
+        if pl_filepathes is not None:
+            pl_filepathes = [p for p in pl_filepathes if p.exists()]
+            logger.info(f'PLs found: {pl_filepathes}')
+
         self.save_hyperparameters()
 
         self.train_dataset_low = None
