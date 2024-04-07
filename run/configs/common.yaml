@@ -106,6 +106,7 @@ data:
   init_args:
     dataset_dirpath: '/workspace/data_external/'
     pl_filepathes: null
+    pl_other_vote_threshold: null
     split_index: 0
     n_splits: 5
     random_subrecord_mode: discrete

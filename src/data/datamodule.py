@@ -46,6 +46,7 @@ class HmsDatamodule(LightningDataModule):
         split_index: int,
         eeg_spectrograms_filepath: Path | None = None,
         pl_filepathes: Optional[List[Path]] = None,
+        pl_other_vote_threshold: Optional[float] = None,
         n_splits: int = 5,
         random_subrecord_mode: Literal['discrete', 'gauss_discrete', 'cont'] = 'discrete',
         clip_eeg: bool = True,
@@ -449,6 +450,17 @@ class HmsDatamodule(LightningDataModule):
             df_meta_train_low = df_meta_train_low.dropna(subset=LABEL_COLS_ORDERED)            
             
             logger.info(f'Length after PLs merge: {len(df_meta_train_low)}')
+
+            # Drop PLs too confident on other_vote
+            if self.hparams.pl_other_vote_threshold is not None:
+                mask = ~df_meta_train_low['eeg_id'].isin(
+                    df_meta_train_low[
+                        df_meta_train_low['other_vote'] >= self.hparams.pl_other_vote_threshold
+                    ]['eeg_id'].unique()
+                )
+                df_meta_train_low = df_meta_train_low[mask]       
+                
+                logger.info(f'Length after other PL dropping: {len(df_meta_train_low)}')
 
         # Apply label smoothing
         # Note: label smoothing is not applied to pseudolabels
